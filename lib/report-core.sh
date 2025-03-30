@@ -55,81 +55,69 @@ add_test_summary() {
     
     log_info "Adding test summary to report"
     
-    # Count successful tests by category
+    # Count successful tests by category - do not use grep outside result handling logic
     local nfs_success=0
-    if [ -f "${RESULT_DIR}/results.log" ]; then
-        nfs_success=$(grep -c "RESULT:NFS:.*:SUCCESS" "${RESULT_DIR}/results.log" || echo 0)
-        nfs_success=$(echo $nfs_success | tr -d '\n')
-    fi
-    
     local mount_success=0
-    if [ -f "${RESULT_DIR}/mount_results.log" ]; then
-        mount_success=$(grep -c "RESULT:MOUNT:.*:SUCCESS" "${RESULT_DIR}/mount_results.log" || echo 0)
-        mount_success=$(echo $mount_success | tr -d '\n')
-    fi
-    
     local bindfs_success=0
-    if [ -f "${RESULT_DIR}/bindfs_results.log" ]; then
-        bindfs_success=$(grep -c "RESULT:BINDFS:.*:SUCCESS" "${RESULT_DIR}/bindfs_results.log" || echo 0)
-        bindfs_success=$(echo $bindfs_success | tr -d '\n')
-    fi
-    
     local smb_success=0
-    if [ -f "${RESULT_DIR}/smb_results.log" ]; then
-        smb_success=$(grep -c "RESULT:SMB:.*:SUCCESS" "${RESULT_DIR}/smb_results.log" || echo 0)
-        smb_success=$(echo $smb_success | tr -d '\n')
-    fi
     
     # Count partial tests by category
     local nfs_partial=0
-    if [ -f "${RESULT_DIR}/results.log" ]; then
-        nfs_partial=$(grep -c "RESULT:NFS:.*:PARTIAL" "${RESULT_DIR}/results.log" || echo 0)
-        nfs_partial=$(echo $nfs_partial | tr -d '\n')
-    fi
-    
     local mount_partial=0
-    if [ -f "${RESULT_DIR}/mount_results.log" ]; then
-        mount_partial=$(grep -c "RESULT:MOUNT:.*:PARTIAL" "${RESULT_DIR}/mount_results.log" || echo 0)
-        mount_partial=$(echo $mount_partial | tr -d '\n')
-    fi
-    
     local bindfs_partial=0
-    if [ -f "${RESULT_DIR}/bindfs_results.log" ]; then
-        bindfs_partial=$(grep -c "RESULT:BINDFS:.*:PARTIAL" "${RESULT_DIR}/bindfs_results.log" || echo 0)
-        bindfs_partial=$(echo $bindfs_partial | tr -d '\n')
+    local smb_partial=0
+    
+    # Calculate total tests
+    local nfs_total=0
+    local mount_total=0
+    local bindfs_total=0
+    local smb_total=0
+    
+    # Function to safely count occurrences in a file
+    count_occurrences() {
+        local file=$1
+        local pattern=$2
+        local count=0
+        
+        if [ -f "$file" ]; then
+            count=$(grep -c "$pattern" "$file" 2>/dev/null || echo 0)
+            # Make sure it's a clean number
+            count=$(echo "$count" | tr -d -c '0-9')
+            # Default to 0 if empty or not a number
+            if [ -z "$count" ] || ! [[ "$count" =~ ^[0-9]+$ ]]; then
+                count=0
+            fi
+        fi
+        
+        echo $count
+    }
+    
+    # Get the counts safely
+    if [ -f "${RESULT_DIR}/results.log" ]; then
+        nfs_success=$(count_occurrences "${RESULT_DIR}/results.log" "RESULT:NFS:.*:SUCCESS")
+        nfs_partial=$(count_occurrences "${RESULT_DIR}/results.log" "RESULT:NFS:.*:PARTIAL")
+        nfs_total=$(count_occurrences "${RESULT_DIR}/results.log" "RESULT:NFS:")
     fi
     
-    local smb_partial=0
+    if [ -f "${RESULT_DIR}/mount_results.log" ]; then
+        mount_success=$(count_occurrences "${RESULT_DIR}/mount_results.log" "RESULT:MOUNT:.*:SUCCESS")
+        mount_partial=$(count_occurrences "${RESULT_DIR}/mount_results.log" "RESULT:MOUNT:.*:PARTIAL")
+        mount_total=$(count_occurrences "${RESULT_DIR}/mount_results.log" "RESULT:MOUNT:")
+    fi
+    
+    if [ -f "${RESULT_DIR}/bindfs_results.log" ]; then
+        bindfs_success=$(count_occurrences "${RESULT_DIR}/bindfs_results.log" "RESULT:BINDFS:.*:SUCCESS")
+        bindfs_partial=$(count_occurrences "${RESULT_DIR}/bindfs_results.log" "RESULT:BINDFS:.*:PARTIAL")
+        bindfs_total=$(count_occurrences "${RESULT_DIR}/bindfs_results.log" "RESULT:BINDFS:")
+    fi
+    
     if [ -f "${RESULT_DIR}/smb_results.log" ]; then
-        smb_partial=$(grep -c "RESULT:SMB:.*:PARTIAL" "${RESULT_DIR}/smb_results.log" || echo 0)
-        smb_partial=$(echo $smb_partial | tr -d '\n')
+        smb_success=$(count_occurrences "${RESULT_DIR}/smb_results.log" "RESULT:SMB:.*:SUCCESS")
+        smb_partial=$(count_occurrences "${RESULT_DIR}/smb_results.log" "RESULT:SMB:.*:PARTIAL")
+        smb_total=$(count_occurrences "${RESULT_DIR}/smb_results.log" "RESULT:SMB:")
     fi
     
     # Calculate failed tests
-    local nfs_total=0
-    if [ -f "${RESULT_DIR}/results.log" ]; then
-        nfs_total=$(grep -c "RESULT:NFS:" "${RESULT_DIR}/results.log" || echo 0)
-        nfs_total=$(echo $nfs_total | tr -d '\n')
-    fi
-    
-    local mount_total=0
-    if [ -f "${RESULT_DIR}/mount_results.log" ]; then
-        mount_total=$(grep -c "RESULT:MOUNT:" "${RESULT_DIR}/mount_results.log" || echo 0)
-        mount_total=$(echo $mount_total | tr -d '\n')
-    fi
-    
-    local bindfs_total=0
-    if [ -f "${RESULT_DIR}/bindfs_results.log" ]; then
-        bindfs_total=$(grep -c "RESULT:BINDFS:" "${RESULT_DIR}/bindfs_results.log" || echo 0)
-        bindfs_total=$(echo $bindfs_total | tr -d '\n')
-    fi
-    
-    local smb_total=0
-    if [ -f "${RESULT_DIR}/smb_results.log" ]; then
-        smb_total=$(grep -c "RESULT:SMB:" "${RESULT_DIR}/smb_results.log" || echo 0)
-        smb_total=$(echo $smb_total | tr -d '\n')
-    fi
-    
     local nfs_failed=$((nfs_total - nfs_success - nfs_partial))
     local mount_failed=$((mount_total - mount_success - mount_partial))
     local bindfs_failed=$((bindfs_total - bindfs_success - bindfs_partial))

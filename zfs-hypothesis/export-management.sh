@@ -28,7 +28,7 @@ create_nfs_export() {
   "path": "${export_path}",
   "comment": "Test export: ${export_name}",
   "enabled": true,
-  "hosts": ["${REMOTE_HOST}"],
+  "hosts": ["192.168.4.99"],
   "ro": false,
   "maproot_user": null,
   "maproot_group": null,
@@ -40,7 +40,7 @@ EOF
 )
     
     # Create export
-    local result=$(sudo sudo midclt call "sharing.nfs.create" "$export_config")
+    local result=$(sudo midclt call "sharing.nfs.create" "$export_config")
     
     if [ $? -ne 0 ]; then
         log_warning "Failed to create NFS export for ${export_path}"
@@ -50,7 +50,7 @@ EOF
     log_success "NFS export created for ${export_path} (ID: ${result})"
     
     # Reload NFS config
-    sudo sudo midclt call "service.reload" "nfs" || {
+    sudo midclt call "service.reload" "nfs" || {
         log_warning "Failed to reload NFS service, export may not be active"
     }
     
@@ -77,7 +77,7 @@ create_smb_share() {
         log_error "Invalid share path: $share_path"
         return 1
     fi
-    local share_name="${2:-$(basename "$share_path" | tr -c 'a-zA-Z0-9' '_')}"
+    local share_name="${2:-$(basename "$share_path" | tr -c 'a-zA-Z0-9' '_')}_$(date +%s)"
     
     log_info "Creating SMB share for ${share_path} as ${share_name}"
     
@@ -100,7 +100,7 @@ EOF
 )
     
     # Create share
-    local result=$(sudo sudo midclt call "sharing.smb.create" "$share_config")
+    local result=$(sudo midclt call "sharing.smb.create" "$share_config")
     
     if [ $? -ne 0 ]; then
         log_warning "Failed to create SMB share for ${share_path}"
@@ -110,7 +110,7 @@ EOF
     log_success "SMB share created for ${share_path} (ID: ${result})"
     
     # Reload SMB config
-    sudo sudo midclt call "service.reload" "cifs" || {
+    sudo midclt call "service.reload" "cifs" || {
         log_warning "Failed to reload CIFS service, share may not be active"
     }
     
@@ -135,7 +135,7 @@ delete_nfs_export() {
     log_info "Deleting NFS export ID: ${export_id}"
     
     # Delete export
-    sudo sudo midclt call "sharing.nfs.delete" "$export_id" || {
+    sudo midclt call "sharing.nfs.delete" "$export_id" || {
         log_error "Failed to delete NFS export ID: ${export_id}"
         return 1
     }
@@ -143,7 +143,7 @@ delete_nfs_export() {
     log_success "NFS export ID ${export_id} deleted"
     
     # Reload NFS config
-    sudo sudo midclt call "service.reload" "nfs" || {
+    sudo midclt call "service.reload" "nfs" || {
         log_warning "Failed to reload NFS service"
     }
     
@@ -165,7 +165,7 @@ delete_smb_share() {
     log_info "Deleting SMB share ID: ${share_id}"
     
     # Delete share
-    sudo sudo midclt call "sharing.smb.delete" "$share_id" || {
+    sudo midclt call "sharing.smb.delete" "$share_id" || {
         log_error "Failed to delete SMB share ID: ${share_id}"
         return 1
     }
@@ -173,7 +173,7 @@ delete_smb_share() {
     log_success "SMB share ID ${share_id} deleted"
     
     # Reload SMB config
-    sudo sudo midclt call "service.reload" "cifs" || {
+    sudo midclt call "service.reload" "cifs" || {
         log_warning "Failed to reload CIFS service"
     }
     
@@ -216,7 +216,7 @@ create_parent_dataset_exports() {
     log_header "Creating exports for parent dataset"
     
     local parent_dataset="${BASE_DATASET}/${TEST_PARENT}"
-    local parent_path=$(sudo sudo zfs get -H -o value mountpoint "${parent_dataset}")
+    local parent_path=$(sudo zfs get -H -o value mountpoint "${parent_dataset}")
     
 
     # Validate child path
@@ -247,7 +247,7 @@ create_child_dataset_exports() {
     
     local parent_dataset="${BASE_DATASET}/${TEST_PARENT}"
     local child_dataset="${parent_dataset}/${TEST_CHILD}"
-    local child_path="$child_path" # Fixed:$(sudo sudo zfs get -H -o value mountpoint "${child_dataset}")
+    local child_path=$(sudo zfs get -H -o value mountpoint "${child_dataset}") # Fixed:$(sudo zfs get -H -o value mountpoint "${child_dataset}")
     
 
     # Validate child path
@@ -280,7 +280,7 @@ create_test_case_exports() {
     
     for test_case in "${TEST_CASES[@]}"; do
         local test_dataset="${parent_dataset}/test-${test_case}"
-        local test_path=$(sudo sudo zfs get -H -o value mountpoint "${test_dataset}")
+        local test_path=$(sudo zfs get -H -o value mountpoint "${test_dataset}")
         
 
     # Validate child path
@@ -313,7 +313,7 @@ create_regular_dir_exports() {
     log_header "Creating exports for regular directories"
     
     local parent_dataset="${BASE_DATASET}/${TEST_PARENT}"
-    local parent_path=$(sudo sudo zfs get -H -o value mountpoint "${parent_dataset}")
+    local parent_path=$(sudo zfs get -H -o value mountpoint "${parent_dataset}")
     
     # Create export for the regular-dir
     create_nfs_export "${parent_path}/regular-dir" "regular_dir" || {

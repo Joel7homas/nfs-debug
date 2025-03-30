@@ -14,8 +14,8 @@ test_sharenfs_property() {
     
     local parent_dataset="${BASE_DATASET}/${TEST_PARENT}"
     local child_dataset="${parent_dataset}/${TEST_CHILD}"
-    local parent_path=$(sudo sudo zfs get -H -o value mountpoint "${parent_dataset}")
-    local child_path=$(sudo sudo zfs get -H -o value mountpoint "${child_dataset}")
+    local parent_path=$(sudo zfs get -H -o value mountpoint "${parent_dataset}")
+    local child_path=$(sudo zfs get -H -o value mountpoint "${child_dataset}")
     
     # Create baseline exports
     cleanup_all_exports
@@ -133,7 +133,7 @@ test_aclinherit_property() {
     
     local parent_dataset="${BASE_DATASET}/${TEST_PARENT}"
     local child_dataset="${parent_dataset}/${TEST_CHILD}"
-    local parent_path=$(sudo sudo zfs get -H -o value mountpoint "${parent_dataset}")
+    local parent_path=$(sudo zfs get -H -o value mountpoint "${parent_dataset}")
     
     # Create baseline exports
     cleanup_all_exports
@@ -167,7 +167,7 @@ test_acltype_property() {
     
     local parent_dataset="${BASE_DATASET}/${TEST_PARENT}"
     local child_dataset="${parent_dataset}/${TEST_CHILD}"
-    local parent_path=$(sudo sudo zfs get -H -o value mountpoint "${parent_dataset}")
+    local parent_path=$(sudo zfs get -H -o value mountpoint "${parent_dataset}")
     
     # Create baseline exports
     cleanup_all_exports
@@ -201,8 +201,8 @@ test_nested_dataset_hypothesis() {
     
     local parent_dataset="${BASE_DATASET}/${TEST_PARENT}"
     local child_dataset="${parent_dataset}/${TEST_CHILD}"
-    local parent_path=$(sudo sudo zfs get -H -o value mountpoint "${parent_dataset}")
-    local child_path=$(sudo sudo zfs get -H -o value mountpoint "${child_dataset}")
+    local parent_path=$(sudo zfs get -H -o value mountpoint "${parent_dataset}")
+    local child_path=$(sudo zfs get -H -o value mountpoint "${child_dataset}")
     
     # Create baseline exports
     cleanup_all_exports
@@ -259,7 +259,7 @@ test_regular_dir_vs_datasets() {
     log_header "Testing regular directories vs. nested datasets"
     
     local parent_dataset="${BASE_DATASET}/${TEST_PARENT}"
-    local parent_path=$(sudo sudo zfs get -H -o value mountpoint "${parent_dataset}")
+    local parent_path=$(sudo zfs get -H -o value mountpoint "${parent_dataset}")
     
     # Create baseline exports
     cleanup_all_exports
@@ -284,7 +284,7 @@ test_real_datasets() {
     log_header "Testing real dataset cases"
     
     local parent_dataset="${BASE_DATASET}/${TEST_PARENT}"
-    local parent_path=$(sudo sudo zfs get -H -o value mountpoint "${parent_dataset}")
+    local parent_path=$(sudo zfs get -H -o value mountpoint "${parent_dataset}")
     
     # Create baseline exports
     cleanup_all_exports
@@ -306,7 +306,7 @@ test_real_datasets() {
     cleanup_all_exports
     for test_case in "${TEST_CASES[@]}"; do
         local test_dataset="${parent_dataset}/test-${test_case}"
-        local test_path=$(sudo sudo zfs get -H -o value mountpoint "${test_dataset}")
+        local test_path=$(sudo zfs get -H -o value mountpoint "${test_dataset}")
         
         create_nfs_export "${test_path}" "individual_${test_case}"
         create_smb_share "${test_path}" "individual_${test_case}"
@@ -330,7 +330,7 @@ test_property_combinations() {
     
     local parent_dataset="${BASE_DATASET}/${TEST_PARENT}"
     local child_dataset="${parent_dataset}/${TEST_CHILD}"
-    local parent_path=$(sudo sudo zfs get -H -o value mountpoint "${parent_dataset}")
+    local parent_path=$(sudo zfs get -H -o value mountpoint "${parent_dataset}")
     
     # Create baseline exports
     cleanup_all_exports
@@ -428,12 +428,12 @@ EOF
         local child_dataset="${parent_dataset}/${TEST_CHILD}"
         
         # Get property values at time of success
-        local sharenfs_parent=$(sudo sudo zfs get -H -o value sharenfs "${parent_dataset}")
-        local sharenfs_child=$(sudo sudo zfs get -H -o value sharenfs "${child_dataset}")
-        local aclinherit_parent=$(sudo sudo zfs get -H -o value aclinherit "${parent_dataset}")
-        local aclinherit_child=$(sudo sudo zfs get -H -o value aclinherit "${child_dataset}")
-        local acltype_parent=$(sudo sudo zfs get -H -o value acltype "${parent_dataset}")
-        local acltype_child=$(sudo sudo zfs get -H -o value acltype "${child_dataset}")
+        local sharenfs_parent=$(sudo zfs get -H -o value sharenfs "${parent_dataset}")
+        local sharenfs_child=$(sudo zfs get -H -o value sharenfs "${child_dataset}")
+        local aclinherit_parent=$(sudo zfs get -H -o value aclinherit "${parent_dataset}")
+        local aclinherit_child=$(sudo zfs get -H -o value aclinherit "${child_dataset}")
+        local acltype_parent=$(sudo zfs get -H -o value acltype "${parent_dataset}")
+        local acltype_child=$(sudo zfs get -H -o value acltype "${child_dataset}")
         
         echo "| ${test} | ${details} |" >> "${success_file}"
         echo "| | Parent sharenfs=${sharenfs_parent}, Child sharenfs=${sharenfs_child} |" >> "${success_file}"
@@ -456,12 +456,12 @@ EOF
         local child_dataset="${parent_dataset}/${TEST_CHILD}"
         
         # Get property values at time of success
-        local sharesmb_parent=$(sudo sudo zfs get -H -o value sharesmb "${parent_dataset}")
-        local sharesmb_child=$(sudo sudo zfs get -H -o value sharesmb "${child_dataset}")
-        local aclinherit_parent=$(sudo sudo zfs get -H -o value aclinherit "${parent_dataset}")
-        local aclinherit_child=$(sudo sudo zfs get -H -o value aclinherit "${child_dataset}")
-        local acltype_parent=$(sudo sudo zfs get -H -o value acltype "${parent_dataset}")
-        local acltype_child=$(sudo sudo zfs get -H -o value acltype "${child_dataset}")
+        local sharesmb_parent=$(sudo zfs get -H -o value sharesmb "${parent_dataset}")
+        local sharesmb_child=$(sudo zfs get -H -o value sharesmb "${child_dataset}")
+        local aclinherit_parent=$(sudo zfs get -H -o value aclinherit "${parent_dataset}")
+        local aclinherit_child=$(sudo zfs get -H -o value aclinherit "${child_dataset}")
+        local acltype_parent=$(sudo zfs get -H -o value acltype "${parent_dataset}")
+        local acltype_child=$(sudo zfs get -H -o value acltype "${child_dataset}")
         
         echo "| ${test} | ${details} |" >> "${success_file}"
         echo "| | Parent sharesmb=${sharesmb_parent}, Child sharesmb=${sharesmb_child} |" >> "${success_file}"

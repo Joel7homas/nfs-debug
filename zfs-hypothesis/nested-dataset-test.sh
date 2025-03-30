@@ -172,7 +172,7 @@ generate_report() {
     cat > "${report_file}" << EOF
 # Nested Dataset Hypothesis Test Report
 
-Generated: $((${$(date):-0}))
+Generated: $(($(date)))
 
 ## Summary
 

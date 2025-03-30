@@ -25,9 +25,9 @@ create_test_dataset_structure() {
     local child_dataset="${parent_dataset}/${TEST_CHILD}"
     
     # Check if datasets already exist
-    if sudo sudo zfs list -H "${parent_dataset}" &> /dev/null; then
+    if sudo zfs list -H "${parent_dataset}" &> /dev/null; then
         log_warning "Parent dataset ${parent_dataset} already exists. Destroying it."
-        sudo sudo zfs destroy -r "${parent_dataset}" || {
+        sudo zfs destroy -r "${parent_dataset}" || {
             log_error "Failed to destroy existing parent dataset ${parent_dataset}"
             # Continuing despite error
         }
@@ -35,7 +35,7 @@ create_test_dataset_structure() {
     
     # Create parent dataset
     log_info "Creating parent dataset: ${parent_dataset}"
-    sudo sudo zfs create "${parent_dataset}" || {
+    sudo zfs create "${parent_dataset}" || {
 
     # Fix permissions
     fix_dataset_permissions "$(sudo zfs get -H -o value mountpoint "${parent_dataset}")"
@@ -49,7 +49,7 @@ create_test_dataset_structure() {
     }
     
     # Create test file in parent dataset
-    local parent_path=$(sudo sudo zfs get -H -o value mountpoint "${parent_dataset}")
+    local parent_path=$(sudo zfs get -H -o value mountpoint "${parent_dataset}")
     log_info "Creating test file in parent dataset at ${parent_path}"
     echo "parent-test-file-content" | sudo tee "${parent_path}/parent-file.txt" > /dev/null || {
         log_warning "Failed to create test file in parent dataset, but continuing"
@@ -58,7 +58,7 @@ create_test_dataset_structure() {
     
     # Create child dataset
     log_info "Creating child dataset: ${child_dataset}"
-    sudo sudo zfs create "${child_dataset}" || {
+    sudo zfs create "${child_dataset}" || {
 
     # Fix permissions
     fix_dataset_permissions "$(sudo zfs get -H -o value mountpoint "${child_dataset}")"
@@ -72,7 +72,7 @@ create_test_dataset_structure() {
     }
     
     # Create test file in child dataset
-    local child_path=$(sudo sudo zfs get -H -o value mountpoint "${child_dataset}")
+    local child_path=$(sudo zfs get -H -o value mountpoint "${child_dataset}")
     log_info "Creating test file in child dataset at ${child_path}"
     echo "child-test-file-content" | sudo tee "${child_path}/child-file.txt" > /dev/null || {
         log_warning "Failed to create test file in child dataset, but continuing"
@@ -81,7 +81,7 @@ create_test_dataset_structure() {
     
     # Create regular directory in parent dataset
     log_info "Creating regular directory in parent dataset"
-    sudo sudo mkdir -p "${parent_path}/regular-dir" || {
+    sudo mkdir -p "${parent_path}/regular-dir" || {
         log_error "Failed to create regular directory in parent dataset"
         # Continuing despite error
     }
@@ -105,9 +105,9 @@ cleanup_test_datasets() {
     local parent_dataset="${BASE_DATASET}/${TEST_PARENT}"
     
     # Delete parent dataset recursively
-    if sudo sudo zfs list -H "${parent_dataset}" &> /dev/null; then
+    if sudo zfs list -H "${parent_dataset}" &> /dev/null; then
         log_info "Destroying test dataset structure: ${parent_dataset}"
-        sudo sudo zfs destroy -r "${parent_dataset}" || {
+        sudo zfs destroy -r "${parent_dataset}" || {
             log_error "Failed to destroy test dataset ${parent_dataset}"
             # Continuing despite error
         }
@@ -130,13 +130,13 @@ set_dataset_property() {
     log_info "Setting ${property}=${value} on dataset ${dataset}"
     
     # Verify dataset exists
-    if ! sudo sudo zfs list -H "${dataset}" &> /dev/null; then
+    if ! sudo zfs list -H "${dataset}" &> /dev/null; then
         log_error "Dataset ${dataset} does not exist"
         # Continuing despite error
     fi
     
     # Set property
-    sudo sudo zfs set "${property}=${value}" "${dataset}" || {
+    sudo zfs set "${property}=${value}" "${dataset}" || {
         log_error "Failed to set ${property}=${value} on ${dataset}"
         # Continuing despite error
     }
@@ -153,13 +153,13 @@ get_dataset_property() {
     local property="$2"
     
     # Verify dataset exists
-    if ! sudo sudo zfs list -H "${dataset}" &> /dev/null; then
+    if ! sudo zfs list -H "${dataset}" &> /dev/null; then
         log_error "Dataset ${dataset} does not exist"
         # Continuing despite error
     fi
     
     # Get property
-    local value=$(sudo sudo zfs get -H -o value "${property}" "${dataset}")
+    local value=$(sudo zfs get -H -o value "${property}" "${dataset}")
     
     log_info "Property ${property} on ${dataset} is: ${value}"
     echo "${value}"
@@ -178,7 +178,7 @@ create_test_case_datasets() {
         
         # Create test case dataset
         log_info "Creating test case dataset: ${test_dataset}"
-        sudo sudo zfs create "${test_dataset}" || {
+        sudo zfs create "${test_dataset}" || {
 
         # Fix permissions
         fix_dataset_permissions "$(sudo zfs get -H -o value mountpoint "${test_dataset}")"
@@ -192,7 +192,7 @@ create_test_case_datasets() {
         }
         
         # Create test file in test case dataset
-        local test_path=$(sudo sudo zfs get -H -o value mountpoint "${test_dataset}")
+        local test_path=$(sudo zfs get -H -o value mountpoint "${test_dataset}")
         log_info "Creating test file in test case dataset at ${test_path}"
         echo "${test_case}-test-file-content" | sudo tee "${test_path}/${test_case}-file.txt" > /dev/null || {
             log_warning "Failed to create test file in test case dataset, but continuing"
@@ -215,7 +215,7 @@ copy_real_data_to_test_datasets() {
     for test_case in "${TEST_CASES[@]}"; do
         local source_path="/mnt/${BASE_DATASET}/${test_case}"
         local test_dataset="${parent_dataset}/test-${test_case}"
-        local test_path=$(sudo sudo zfs get -H -o value mountpoint "${test_dataset}")
+        local test_path=$(sudo zfs get -H -o value mountpoint "${test_dataset}")
         
         # Check if source directory exists
         if [ ! -d "${source_path}" ]; then
@@ -230,7 +230,7 @@ copy_real_data_to_test_datasets() {
             local dir_path=$(dirname "${test_path}/${relative_path}")
             
             # Create directory structure
-            sudo sudo mkdir -p "${dir_path}"
+            sudo mkdir -p "${dir_path}"
             
             # Copy file
             sudo cp "${file}" "${test_path}/${relative_path}" || {
@@ -253,12 +253,12 @@ create_regular_directory_copies() {
     log_header "Creating regular directory copies of dataset data"
     
     local parent_dataset="${BASE_DATASET}/${TEST_PARENT}"
-    local parent_path=$(sudo sudo zfs get -H -o value mountpoint "${parent_dataset}")
+    local parent_path=$(sudo zfs get -H -o value mountpoint "${parent_dataset}")
     
     # Create regular directories for each test case
     for test_case in "${TEST_CASES[@]}"; do
         local test_dataset="${parent_dataset}/test-${test_case}"
-        local test_path=$(sudo sudo zfs get -H -o value mountpoint "${test_dataset}")
+        local test_path=$(sudo zfs get -H -o value mountpoint "${test_dataset}")
         local regular_dir="${parent_path}/regular-${test_case}"
         
         # Create regular directory
@@ -292,15 +292,15 @@ list_dataset_structure() {
     
     # List datasets
     log_info "Datasets:"
-    sudo sudo zfs list -r "${parent_dataset}" | tee -a "${LOG_FILE}"
+    sudo zfs list -r "${parent_dataset}" | tee -a "${LOG_FILE}"
     
     # List properties
     log_info "Dataset properties:"
-    sudo sudo zfs get all "${parent_dataset}" | grep -e sharenfs -e sharesmb -e aclinherit -e acltype | tee -a "${LOG_FILE}"
+    sudo zfs get all "${parent_dataset}" | grep -e sharenfs -e sharesmb -e aclinherit -e acltype | tee -a "${LOG_FILE}"
     
     for test_case in "${TEST_CASES[@]}"; do
         local test_dataset="${parent_dataset}/test-${test_case}"
-        sudo sudo zfs get all "${test_dataset}" | grep -e sharenfs -e sharesmb -e aclinherit -e acltype | tee -a "${LOG_FILE}"
+        sudo zfs get all "${test_dataset}" | grep -e sharenfs -e sharesmb -e aclinherit -e acltype | tee -a "${LOG_FILE}"
     done
     
     # List files

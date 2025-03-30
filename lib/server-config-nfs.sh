@@ -1,7 +1,7 @@
 #!/bin/bash
 # server-config-nfs.sh - NFS-specific server configuration functions
-# Implements the minimalist multi-module pattern (max 10 functions per module)
 # Updated for TrueNAS Scale 24.10.2 API compatibility
+# Implements the minimalist multi-module pattern (max 10 functions per module)
 
 # Ensure we have core utilities
 if ! type log_info &> /dev/null; then
@@ -18,8 +18,8 @@ get_existing_nfs_export() {
     
     log_info "Checking for existing NFS export for path: $export_path"
     
-    # Use paths array format for current TrueNAS API
-    local result=$(midclt call "sharing.nfs.query" "[[\\"paths\\", \\"INCLUDES\\", \\"$export_path\\"]]")
+    # Using path (not paths) based on the API documentation and test results
+    local result=$(midclt call "sharing.nfs.query" "[[\"path\", \"=\", \"$export_path\"]]")
     
     # Check if we got any results (not empty array)
     if [ "$result" == "[]" ]; then
@@ -40,7 +40,7 @@ create_nfs_export() {
     
     log_info "Creating new NFS export: $config_name"
     
-    # Create the export
+    # Create the export - ensure the config_json includes all required fields
     local result=$(midclt call "sharing.nfs.create" "$config_json")
     
     if [ $? -ne 0 ]; then
@@ -69,7 +69,7 @@ update_nfs_export() {
     
     log_info "Updating NFS export (ID: $export_id): $config_name"
     
-    # Update the export
+    # TrueNAS Scale 24.10.2 expects two parameters: id and config object
     midclt call "sharing.nfs.update" "$export_id" "$config_json"
     
     if [ $? -ne 0 ]; then
@@ -121,8 +121,8 @@ configure_nfs_export() {
     
     log_info "Configuring NFS export: $config_name"
     
-    # Extract paths from the config JSON
-    local export_path=$(echo "$config_json" | jq -r '.paths[0]')
+    # Extract path from the config JSON
+    local export_path=$(echo "$config_json" | jq -r '.path')
     
     # Check if export already exists
     local existing_export=$(get_existing_nfs_export "$export_path")
@@ -165,7 +165,7 @@ test_nfs_export_config() {
     ssh_unmount "${REMOTE_MOUNT_POINT}"
     
     # Extract path from config
-    local export_path=$(echo "$config_json" | jq -r '.paths[0]')
+    local export_path=$(echo "$config_json" | jq -r '.path')
     
     # Try to mount
     local server_host=$(hostname -f)
@@ -202,7 +202,7 @@ test_nfs_export_config() {
     # creating a temporary export, we'll handle cleanup differently
     
     # First get the export ID
-    local export_path=$(echo "$config_json" | jq -r '.paths[0]')
+    local export_path=$(echo "$config_json" | jq -r '.path')
     local existing_export=$(get_existing_nfs_export "$export_path")
     
     if [ -n "$existing_export" ]; then
@@ -235,16 +235,14 @@ get_basic_nfs_config() {
     local export_path="$1"
     local additional_fields="${2:-{}}"
     
-    # Create base config with current TrueNAS API format
+    # Create base config with current TrueNAS API format based on sample output
     local base_config='{
-        "paths": ["'"$export_path"'"],
+        "path": "'"$export_path"'",
         "comment": "Temporary test export",
-        "networks": ["*"],
-        "hosts": [],
-        "alldirs": false,
+        "hosts": ["192.168.4.99"],
         "ro": false,
-        "quiet": false,
-        "enabled": true
+        "enabled": true,
+        "networks": []
     }'
     
     # Merge additional fields
@@ -262,7 +260,8 @@ test_no_mapping_config() {
         "maproot_user": null,
         "maproot_group": null,
         "mapall_user": null,
-        "mapall_group": null
+        "mapall_group": null,
+        "security": []
     }')
     
     test_nfs_export_config "No mapping" "$config_json"
@@ -278,7 +277,8 @@ test_root_mapping_config() {
         "maproot_user": "root",
         "maproot_group": "wheel",
         "mapall_user": null,
-        "mapall_group": null
+        "mapall_group": null,
+        "security": ["SYS"]
     }')
     
     test_nfs_export_config "Root mapping" "$config_json"
@@ -294,7 +294,8 @@ test_all_root_mapping_config() {
         "maproot_user": null,
         "maproot_group": null,
         "mapall_user": "root",
-        "mapall_group": "wheel"
+        "mapall_group": "wheel",
+        "security": ["SYS"]
     }')
     
     test_nfs_export_config "All to root" "$config_json"
@@ -311,7 +312,8 @@ test_remote_user_mapping_config() {
         "maproot_user": null,
         "maproot_group": null,
         "mapall_user": "'"$remote_user"'",
-        "mapall_group": "'"$remote_user"'"
+        "mapall_group": "'"$remote_user"'",
+        "security": ["SYS"]
     }')
     
     test_nfs_export_config "Map to ${REMOTE_USER}" "$config_json"

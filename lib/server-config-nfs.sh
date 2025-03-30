@@ -23,6 +23,21 @@ update_nfs_export_config() {
         return 1
     fi
     
+    # Need to convert export_id to a pure integer
+    export_id=$(echo $export_id | tr -d '"' | tr -d ' ')
+    
+    # Update the security field to match current TrueNAS requirements
+    # Replace "security": ["sys"] with "sec": "SYS"
+    config_json=$(echo $config_json | sed 's/"security": \["sys"\]/"sec": "SYS"/g')
+    
+    # Remove any fields that are not expected in current TrueNAS
+    config_json=$(echo $config_json | sed 's/"quiet": [^,]*,//g')
+    config_json=$(echo $config_json | sed 's/"network": [^,]*,//g')
+    config_json=$(echo $config_json | sed 's/"alldirs": [^,]*,//g')
+    config_json=$(echo $config_json | sed 's/"root_squash": [^,]*,//g')
+    config_json=$(echo $config_json | sed 's/"enabled": [^,]*,//g')
+    config_json=$(echo $config_json | sed 's/"ro": [^,]*,//g')
+    
     # Update the export configuration
     midclt call "sharing.nfs.update" "$export_id" "$config_json"
     if [ $? -ne 0 ]; then

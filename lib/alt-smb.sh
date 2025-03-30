@@ -96,8 +96,7 @@ create_smb_share() {
         \"aapl_name_mangling\": false,
         \"streams\": false,
         \"durablehandle\": true,
-        \"fsrvp\": false,
-        \"shadow_copy\": false
+        \"fsrvp\": false
     }"
     
     midclt call "sharing.smb.create" "$share_config" > /dev/null

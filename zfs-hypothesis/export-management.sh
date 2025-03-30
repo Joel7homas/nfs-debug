@@ -40,9 +40,9 @@ EOF
 )
     
     # Create export
-    local result=$(sudo midclt call "sharing.nfs.create" "$export_config")
+    local result=$(sudo midclt call "sharing.nfs.create" "$export_config" 2>&1)
     
-    if [ $? -ne 0 ]; then
+    if [ $? -ne 0 ] || [[ "$result" == *"ERROR"* ]]; then
         log_warning "Failed to create NFS export for ${export_path}"
         return 1
     fi
@@ -190,7 +190,17 @@ cleanup_all_exports() {
         return 0
     fi
     
-    while IFS=: read -r id type path; do
+    while IFS=: read -r id type path rest; do
+        # Skip empty lines
+        if [ -z "$line" ]; then
+            continue
+        fi
+        
+        # Skip lines with numeric 'type' (these are malformed entries)
+        if [[ "$type" =~ ^[0-9]+$ ]]; then
+            log_warning "Skipping malformed entry: $id:$type:$path"
+            continue
+        fi
         if [ "${type}" = "nfs" ]; then
             delete_nfs_export "${id}"
         elif [ "${type}" = "smb" ]; then

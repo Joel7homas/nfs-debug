@@ -201,6 +201,16 @@ cleanup_all_exports() {
             log_warning "Skipping malformed entry: $id:$type:$path"
             continue
         fi
+        # Skip empty lines
+        if [ -z "$line" ]; then
+            continue
+        fi
+        
+        # Skip lines with numeric 'type' (these are malformed entries)
+        if [[ "$type" =~ ^[0-9]+$ ]]; then
+            log_warning "Skipping malformed entry: $id:$type:$path"
+            continue
+        fi
         if [ "${type}" = "nfs" ]; then
             delete_nfs_export "${id}"
         elif [ "${type}" = "smb" ]; then

@@ -172,7 +172,7 @@ generate_report() {
     cat > "${report_file}" << EOF
 # Nested Dataset Hypothesis Test Report
 
-Generated: $(($(date)))
+Generated: $(date)
 
 ## Summary
 
@@ -185,15 +185,15 @@ relationships when sharing parent datasets.
 EOF
     
     # Count results
-    local nfs_success=$((${$(grep -c "RESULT:NFS:.*:SUCCESS:" "${results_file}" || echo 0):-0}))
-    local nfs_partial=$((${$(grep -c "RESULT:NFS:.*:PARTIAL:" "${results_file}" || echo 0):-0}))
-    local nfs_failed=$((${$(grep -c "RESULT:NFS:.*:FAILED:" "${results_file}" || echo 0):-0}))
-    local nfs_mount_failed=$((${$(grep -c "RESULT:NFS:.*:MOUNT_FAILED:" "${results_file}" || echo 0):-0}))
+    local nfs_success=$(grep -c "RESULT:NFS:.*:SUCCESS:" "${results_file}" 2>/dev/null || echo 0)
+    local nfs_partial=$(grep -c "RESULT:NFS:.*:PARTIAL:" "${results_file}" 2>/dev/null || echo 0)
+    local nfs_failed=$(grep -c "RESULT:NFS:.*:FAILED:" "${results_file}" 2>/dev/null || echo 0)
+    local nfs_mount_failed=$(grep -c "RESULT:NFS:.*:MOUNT_FAILED:" "${results_file}" 2>/dev/null || echo 0)
     
-    local smb_success=$((${$(grep -c "RESULT:SMB:.*:SUCCESS:" "${results_file}" || echo 0):-0}))
-    local smb_partial=$((${$(grep -c "RESULT:SMB:.*:PARTIAL:" "${results_file}" || echo 0):-0}))
-    local smb_failed=$((${$(grep -c "RESULT:SMB:.*:FAILED:" "${results_file}" || echo 0):-0}))
-    local smb_mount_failed=$((${$(grep -c "RESULT:SMB:.*:MOUNT_FAILED:" "${results_file}" || echo 0):-0}))
+    local smb_success=$(grep -c "RESULT:SMB:.*:SUCCESS:" "${results_file}" 2>/dev/null || echo 0)
+    local smb_partial=$(grep -c "RESULT:SMB:.*:PARTIAL:" "${results_file}" 2>/dev/null || echo 0)
+    local smb_failed=$(grep -c "RESULT:SMB:.*:FAILED:" "${results_file}" 2>/dev/null || echo 0)
+    local smb_mount_failed=$(grep -c "RESULT:SMB:.*:MOUNT_FAILED:" "${results_file}" 2>/dev/null || echo 0)
     
     # Add summary table
     cat >> "${report_file}" << EOF
@@ -201,8 +201,8 @@ EOF
 
 | Protocol | Success | Partial | Failed | Mount Failed | Total |
 |----------|---------|---------|--------|--------------|-------|
-| NFS      | ${nfs_success} | ${nfs_partial} | ${nfs_failed} | ${nfs_mount_failed} | $((${$((${nfs_success:-0} + ${nfs_partial:-0} + ${nfs_failed:-0} + ${nfs_mount_failed:-0}):-0}))) |
-| SMB      | ${smb_success} | ${smb_partial} | ${smb_failed} | ${smb_mount_failed} | $((${$((${smb_success:-0} + ${smb_partial:-0} + ${smb_failed:-0} + ${smb_mount_failed:-0}):-0}))) |
+| NFS      | ${nfs_success} | ${nfs_partial} | ${nfs_failed} | ${nfs_mount_failed} | $((nfs_success + nfs_partial + nfs_failed + nfs_mount_failed)) |
+| SMB      | ${smb_success} | ${smb_partial} | ${smb_failed} | ${smb_mount_failed} | $((smb_success + smb_partial + smb_failed + smb_mount_failed)) |
 
 ## Key Findings
 

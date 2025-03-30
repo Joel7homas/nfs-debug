@@ -275,7 +275,9 @@ create_regular_directory_copies() {
         }
         
         # Create a marker file to distinguish the directory
-        echo "This is a regular directory copy of ${test_case}" > "${regular_dir}/REGULAR_DIR_MARKER.txt"
+        sudo bash -c "echo "This is a regular directory copy of ${test_case}" > ${regular_dir}/REGULAR_DIR_MARKER.txt" || {
+            log_warning "Failed to create marker file for ${test_case}, but continuing"
+        }
         
         log_success "Regular directory copy for ${test_case} created successfully"
     done

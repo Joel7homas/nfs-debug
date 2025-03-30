@@ -124,7 +124,7 @@ mount_nfs_export() {
 mount_smb_share() {
 
     # Ensure CIFS utils are installed
-    ssh_execute "command -v mount.cifs > /dev/null || { echo "Installing cifs-utils..."; sudo apt-get install -y cifs-utils; }" || {
+    ssh_execute "command -v mount.cifs > /dev/null || sudo apt-get install -y cifs-utils" || {
         log_warning "Failed to install cifs-utils, but continuing"
     }
     local share_name="$1"

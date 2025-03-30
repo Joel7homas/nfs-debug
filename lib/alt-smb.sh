@@ -1,6 +1,7 @@
 #!/bin/bash
 # alt-smb.sh - Functions for testing SMB/CIFS alternatives
 # Implements the minimalist multi-module pattern (max 10 functions per module)
+# Updated to fix credentials path issues and UID/GID handling
 
 # Ensure we have core utilities
 if ! type log_info &> /dev/null; then
@@ -80,7 +81,7 @@ create_smb_share() {
         return 0
     fi
     
-    # Create the SMB share
+    # Create the SMB share with current TrueNAS API format
     local share_config="{
         \"path\": \"$export_path\",
         \"name\": \"$share_name\",
@@ -90,8 +91,6 @@ create_smb_share() {
         \"home\": false,
         \"ro\": false,
         \"browsable\": true,
-        \"timemachine\": false,
-        \"recyclebin\": false,
         \"auxsmbconf\": \"create mask=0755\\ndirectory mask=0755\",
         \"aapl_name_mangling\": false,
         \"streams\": false,
@@ -109,6 +108,59 @@ create_smb_share() {
     midclt call "service.restart" "cifs"
     
     log_success "SMB share created"
+    return 0
+}
+
+# Function: create_smb_credentials_file
+# Description: Create SMB credentials file on remote host
+# Args: $1 - Username, $2 - Password
+# Returns: Path to credentials file
+create_smb_credentials_file() {
+    local username="$1"
+    local password="$2"
+    local remote_user="${REMOTE_USER:-joel}"
+    
+    # Create absolute path for credentials file
+    local creds_file="/home/${remote_user}/.smbcredentials-test"
+    
+    log_info "Creating SMB credentials file on remote host at $creds_file"
+    
+    # Create the credentials file with proper permissions
+    ssh_execute "echo \"username=${username}\" > \"$creds_file\" && echo \"password=${password}\" >> \"$creds_file\" && chmod 600 \"$creds_file\""
+    
+    if [ $? -ne 0 ]; then
+        log_error "Failed to create SMB credentials file"
+        return 1
+    fi
+    
+    log_success "SMB credentials file created at $creds_file"
+    echo "$creds_file"
+    return 0
+}
+
+# Function: get_remote_uid_gid
+# Description: Get UID and GID of remote user
+# Returns: String in format "uid=X,gid=Y"
+get_remote_uid_gid() {
+    log_info "Getting UID and GID of remote user"
+    
+    # Get UID and GID as clean numbers
+    local uid=$(ssh_execute "id -u" | tr -d '\r\n')
+    local gid=$(ssh_execute "id -g" | tr -d '\r\n')
+    
+    # Validate that they are numbers
+    if ! [[ "$uid" =~ ^[0-9]+$ ]]; then
+        log_warning "Invalid UID obtained: $uid, using default"
+        uid="1000"
+    fi
+    
+    if ! [[ "$gid" =~ ^[0-9]+$ ]]; then
+        log_warning "Invalid GID obtained: $gid, using default"
+        gid="1000"
+    fi
+    
+    log_info "Remote user UID=$uid, GID=$gid"
+    echo "uid=$uid,gid=$gid"
     return 0
 }
 
@@ -147,20 +199,25 @@ test_smb_mount() {
     local username="${SMB_USERNAME:-${REMOTE_USER}}"
     local password="${SMB_PASSWORD:-password}"
     
-    # Create credentials file on remote host
-    local creds_file="/home/${REMOTE_USER}/.smbcredentials"
-    ssh_execute "echo \"username=$username\" > $creds_file && echo \"password=$password\" >> $creds_file && chmod 600 $creds_file"
-    
-    # Mount SMB share
-    log_info "Mounting SMB share with options: $mount_options"
-    ssh_execute_sudo "mount -t cifs -o $mount_options,credentials=$creds_file //$server_host/$share_name $mount_point"
-    
+    # Create credentials file on remote host with absolute path
+    local creds_file=$(create_smb_credentials_file "$username" "$password")
     if [ $? -ne 0 ]; then
+        log_error "Skipping SMB test: Failed to create credentials file"
+        echo "RESULT:SMB:$description:CREDENTIALS_FAILED" >> "${RESULT_DIR}/smb_results.log"
+        return 1
+    fi
+    
+    # Mount SMB share with credentials file
+    log_info "Mounting SMB share with options: $mount_options"
+    ssh_execute_sudo "mount -t cifs -o ${mount_options},credentials=\"${creds_file}\" //${server_host}/${share_name} ${mount_point}"
+    local mount_result=$?
+    
+    if [ $mount_result -ne 0 ]; then
         log_error "Failed to mount SMB share"
         echo "RESULT:SMB:$description:MOUNT_FAILED" >> "${RESULT_DIR}/smb_results.log"
         
         # Clean up credentials file
-        ssh_execute "rm -f ~/.smbcredentials"
+        ssh_execute "rm -f \"${creds_file}\""
         
         return 1
     fi
@@ -183,7 +240,7 @@ test_smb_mount() {
     
     # Clean up
     ssh_unmount "$mount_point"
-    ssh_execute "rm -f ~/.smbcredentials"
+    ssh_execute "rm -f \"${creds_file}\""
     
     return $content_result
 }
@@ -205,17 +262,11 @@ test_smb_with_file_mode() {
 # Function: test_smb_with_uid_gid
 # Description: Test SMB mount with specific UID/GID
 test_smb_with_uid_gid() {
-    # Get UID and GID as variables before using them in the mount command
-    local uid=$(ssh_execute "id -u" | tr -d '\r\n')
-    local gid=$(ssh_execute "id -g" | tr -d '\r\n')
+    # Get UID and GID as a formatted string
+    local uid_gid=$(get_remote_uid_gid)
     
-    # Make sure uid/gid are numbers
-    if ! [[ "$uid" =~ ^[0-9]+$ ]] || ! [[ "$gid" =~ ^[0-9]+$ ]]; then
-        log_warning "Could not get valid UID/GID, using default options"
-        test_smb_mount "SMB with UID/GID" "rw"
-    else
-        test_smb_mount "SMB with UID/GID" "rw,uid=$uid,gid=$gid"
-    fi
+    # Test with the obtained UID/GID
+    test_smb_mount "SMB with UID/GID" "rw,${uid_gid}"
     
     return $?
 }
@@ -236,8 +287,12 @@ create_smb_systemd_unit() {
     local server_host=$(hostname -f)
     local share_name="${SMB_SHARE_NAME:-docker}"
     local username="${SMB_USERNAME:-${REMOTE_USER}}"
+    local remote_user="${REMOTE_USER:-joel}"
     
     log_info "Creating systemd unit file for successful SMB configuration"
+    
+    # Use absolute paths for credentials
+    local creds_path="/home/${remote_user}/.smbcredentials"
     
     # Create SMB mount unit
     local smb_unit="[Unit]
@@ -248,7 +303,7 @@ After=network.target
 What=//${server_host}/${share_name}
 Where=${mount_point}
 Type=cifs
-Options=${mount_options},credentials=/home/${username}/.smbcredentials
+Options=${mount_options},credentials=${creds_path}
 TimeoutSec=30
 
 [Install]
@@ -257,10 +312,10 @@ WantedBy=multi-user.target"
     # Create credentials file script
     local creds_script="#!/bin/bash
 # Create SMB credentials file
-echo \"username=${username}\" > ~/.smbcredentials
-echo \"password=YOUR_PASSWORD_HERE\" >> ~/.smbcredentials
-chmod 600 ~/.smbcredentials
-echo \"SMB credentials file created at ~/.smbcredentials\"
+echo \"username=${username}\" > ${creds_path}
+echo \"password=YOUR_PASSWORD_HERE\" >> ${creds_path}
+chmod 600 ${creds_path}
+echo \"SMB credentials file created at ${creds_path}\"
 echo \"Edit this file and replace YOUR_PASSWORD_HERE with your actual password\"
 "
 
@@ -291,22 +346,28 @@ test_smb_solutions() {
     test_smb_with_noperm
     
     # Create systemd unit file for successful configurations
-    if grep -q "RESULT:SMB:.*:SUCCESS" "${RESULT_DIR}/smb_results.log"; then
+    if grep -q "RESULT:SMB:.*:SUCCESS" "${RESULT_DIR}/smb_results.log" 2>/dev/null; then
         local success_config=$(grep "RESULT:SMB:.*:SUCCESS" "${RESULT_DIR}/smb_results.log" | head -1)
         local description=$(echo "$success_config" | cut -d: -f3)
         
         # Use the UID/GID solution parameters for the systemd unit
-        local uid=$(ssh_execute "id -u")
-        local gid=$(ssh_execute "id -g")
-        create_smb_systemd_unit "$description" "rw,uid=$uid,gid=$gid,file_mode=0755,dir_mode=0755"
+        local uid_gid=$(get_remote_uid_gid)
+        create_smb_systemd_unit "$description" "rw,${uid_gid},file_mode=0755,dir_mode=0755"
     fi
     
     log_success "All SMB solutions tested"
     
     # Generate summary
-    local success_count=$(grep -c "RESULT:SMB:.*:SUCCESS" "${RESULT_DIR}/smb_results.log")
-    local partial_count=$(grep -c "RESULT:SMB:.*:PARTIAL" "${RESULT_DIR}/smb_results.log")
-    local failed_count=$(grep -c "RESULT:SMB:.*:NO_CONTENT\|RESULT:SMB:.*:MOUNT_FAILED" "${RESULT_DIR}/smb_results.log")
+    local success_count=0
+    local partial_count=0
+    local failed_count=0
+    
+    # Safely count results
+    if [ -f "${RESULT_DIR}/smb_results.log" ]; then
+        success_count=$(grep -c "RESULT:SMB:.*:SUCCESS" "${RESULT_DIR}/smb_results.log" 2>/dev/null || echo 0)
+        partial_count=$(grep -c "RESULT:SMB:.*:PARTIAL" "${RESULT_DIR}/smb_results.log" 2>/dev/null || echo 0)
+        failed_count=$(grep -c "RESULT:SMB:.*:NO_CONTENT\|RESULT:SMB:.*:MOUNT_FAILED" "${RESULT_DIR}/smb_results.log" 2>/dev/null || echo 0)
+    fi
     
     log_info "Summary: $success_count successful, $partial_count partial, $failed_count failed SMB solutions"
     

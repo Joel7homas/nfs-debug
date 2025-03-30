@@ -24,7 +24,7 @@ update_nfs_export_config() {
     fi
     
     # Update the export configuration
-    midclt call "sharing.nfs.update" "[$export_id, $config_json]"
+    midclt call "sharing.nfs.update" "$export_id" "$config_json"
     if [ $? -ne 0 ]; then
         log_error "Failed to update NFS export"
         return 1

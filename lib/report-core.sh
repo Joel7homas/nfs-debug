@@ -372,6 +372,71 @@ EOF
     return 0
 }
 
+# Function: add_export_configs
+# Description: Add actual NFS export configurations from exportfs
+add_export_configs() {
+    local report_file="${RESULT_DIR}/nfs_test_report.md"
+    
+    log_info "Adding detailed NFS export configurations to report"
+    
+    # Check if we have any export configs
+    if [ ! -f "${RESULT_DIR}/export_configs.log" ] || ! grep -q "EXPORT_CONFIG:" "${RESULT_DIR}/export_configs.log"; then
+        log_warning "No NFS export configuration details found"
+        return 0
+    fi
+    
+    # Add section to report
+    cat >> "$report_file" << EOF
+## Detailed NFS Export Configurations
+
+This section shows the actual NFS export configurations from \`exportfs -v\` for each test:
+
+| Export Path | Export Options | Test Result |
+|-------------|----------------|-------------|
+EOF
+    
+    # Extract and format each export config
+    grep "EXPORT_CONFIG:" "${RESULT_DIR}/export_configs.log" | while read -r line; do
+        local export_path=$(echo "$line" | cut -d: -f2)
+        local export_config=$(echo "$line" | cut -d: -f3-)
+        
+        # Try to find the matching test result
+        local test_result="Unknown"
+        if [ -f "${RESULT_DIR}/results.log" ]; then
+            local result_line=$(grep -i "RESULT:NFS.*SUCCESS\|RESULT:NFS.*PARTIAL\|RESULT:NFS.*FAILED" "${RESULT_DIR}/results.log" | grep -i "$export_path" | head -1)
+            if [ -n "$result_line" ]; then
+                test_result=$(echo "$result_line" | cut -d: -f4)
+            fi
+        fi
+        
+        # Format the export options by replacing spaces with <br> for better readability
+        local formatted_config=$(echo "$export_config" | sed 's/ /\\<br\\>/g')
+        
+        echo "| $export_path | $formatted_config | $test_result |" >> "$report_file"
+    done
+    
+    # Add correlation with NFS API settings
+    cat >> "$report_file" << EOF
+
+### Correlation with TrueNAS API Settings
+
+This table helps understand how TrueNAS API settings translate to NFS export options:
+
+| TrueNAS API Setting | NFS Export Option | Effect |
+|---------------------|------------------|--------|
+| maproot_user=null, maproot_group=null, mapall_user=null, mapall_group=null | no_root_squash, no_all_squash | No ID mapping |
+| maproot_user="root", maproot_group="wheel" | no_root_squash | Root can access files as root |
+| mapall_user="root", mapall_group="wheel" | no_root_squash, all_squash, anonuid=0, anongid=0 | All users mapped to root |
+| mapall_user="username", mapall_group="groupname" | root_squash, all_squash, anonuid=X, anongid=Y | All users mapped to specific user/group |
+
+These correlations help explain why certain configurations work better than others for access to container directories.
+EOF
+    
+    log_success "NFS export configurations added to report"
+    return 0
+}
+
+
 # Function: add_recommendations
 # Description: Add recommendations section to the report based on test results
 add_recommendations() {
@@ -527,6 +592,7 @@ generate_final_report() {
     # Add all sections
     add_test_summary
     add_nfs_server_results
+    add_export_configs  # Add the detailed export configurations
     add_nfs_client_results
     add_bindfs_results
     add_smb_results

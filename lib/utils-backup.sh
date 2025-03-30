@@ -1,5 +1,6 @@
 #!/bin/bash
 # utils-backup.sh - Backup and restore utilities for NFS testing
+# Updated for TrueNAS Scale 24.10.2 API compatibility
 # Implements the minimalist multi-module pattern (max 10 functions per module)
 
 # Ensure we have core utilities
@@ -130,27 +131,52 @@ restore_config() {
     
     log_info "Restoring $config_name configuration from $backup_file"
     
-    # Get the ID from the backup file
-    local id=$(jq -r '.[0].id' "$backup_file" 2>/dev/null)
-    if [ -z "$id" ] || [ "$id" == "null" ]; then
-        log_error "Failed to extract ID from backup file"
-        return 1
-    fi
+    # Get the array of configurations from the backup file
+    local configs=$(cat "$backup_file")
     
-    # Get the configuration from the backup file
-    local config=$(jq -r '.[0]' "$backup_file")
-    
-    # Update the configuration
-    midclt call "${api_endpoint%.query}.update" "$id" "$config"
-    local exit_code=$?
-    
-    if [ $exit_code -eq 0 ]; then
-        log_success "$config_name configuration restored successfully"
+    # If it's an empty array, nothing to restore
+    if [ "$configs" == "[]" ]; then
+        log_warning "No configurations to restore from backup"
         return 0
-    else
-        log_error "Failed to restore $config_name configuration"
-        return 1
     fi
+    
+    # Process each configuration in the array
+    echo "$configs" | jq -c '.[]' | while read -r config; do
+        # Get the ID from the config
+        local id=$(echo "$config" | jq -r '.id')
+        if [ -z "$id" ] || [ "$id" == "null" ]; then
+            log_error "Failed to extract ID from config"
+            continue
+        fi
+        
+        # Sanitize the config by removing fields that cause errors
+        # This fixes: [EINVAL] sharingnfs_update.id: Field was not expected
+        local update_endpoint="${api_endpoint%.query}.update"
+        
+        # Different sanitization based on endpoint type
+        if [[ "$update_endpoint" == *"nfs"* ]]; then
+            # For NFS exports, remove problematic fields
+            local sanitized=$(echo "$config" | jq 'del(.id, .locked)')
+        elif [[ "$update_endpoint" == *"smb"* ]]; then
+            # For SMB shares, remove problematic fields
+            local sanitized=$(echo "$config" | jq 'del(.id, .locked, .vuid, .path_local)')
+        else
+            # Default sanitization
+            local sanitized=$(echo "$config" | jq 'del(.id, .locked)')
+        fi
+        
+        # Update the configuration
+        midclt call "$update_endpoint" "$id" "$sanitized"
+        
+        if [ $? -ne 0 ]; then
+            log_error "Failed to restore configuration with ID $id"
+        else
+            log_success "Restored configuration with ID $id"
+        fi
+    done
+    
+    log_success "$config_name configuration restored"
+    return 0
 }
 
 # Function: find_latest_config_backup
@@ -177,8 +203,10 @@ find_latest_config_backup() {
 # Returns: 0 on success, 1 on failure
 backup_nfs_exports() {
     local export_path="${EXPORT_PATH:-/mnt/data-tank/docker}"
+    # Using correct path filter format for TrueNAS Scale 24.10.2
     local query_filter="[[\"path\", \"=\", \"$export_path\"]]"
     
+    log_info "Backing up NFS export configurations"
     backup_config "nfs-exports" "sharing.nfs.query" "$query_filter"
     return $?
 }
@@ -193,6 +221,7 @@ restore_nfs_exports() {
         return 1
     fi
     
+    log_info "Restoring nfs-exports configuration from $latest_backup"
     restore_config "nfs-exports" "sharing.nfs.query" "$latest_backup"
     
     # Restart NFS service to apply changes

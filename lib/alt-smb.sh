@@ -124,13 +124,12 @@ create_smb_credentials_quiet() {
     local creds_file="/home/${remote_user}/.smbcreds-test"
     
     # Create the credentials file with proper permissions
-    ssh_execute "echo \"username=${username}\" > \"$creds_file\" && echo \"password=${password}\" >> \"$creds_file\" && chmod 600 \"$creds_file\""
+    ssh_execute "echo \"username=${username}\" > \"$creds_file\" && echo \"password=${password}\" >> \"$creds_file\" && chmod 600 \"$creds_file\" && echo \"$creds_file\""
     
     if [ $? -ne 0 ]; then
         return 1
     fi
     
-    echo "$creds_file"
     return 0
 }
 
@@ -181,9 +180,13 @@ test_smb_mount() {
     local username="${SMB_USERNAME:-${REMOTE_USER}}"
     local password="${SMB_PASSWORD:-password}"
     
-    # Create credentials file (without logging)
-    local creds_file=""
+    # Create credentials file and get path
+    # The echo from ssh_execute returns just the path
+    local creds_file
     creds_file=$(create_smb_credentials_quiet "$username" "$password")
+    
+    # Trim whitespace from creds_file
+    creds_file=$(echo "$creds_file" | tr -d '[:space:]')
     
     if [ -z "$creds_file" ]; then
         log_error "Failed to create credentials file"
@@ -198,12 +201,13 @@ test_smb_mount() {
     
     # Add UID/GID if this is the UID/GID test
     if [[ "$description" == *"UID/GID"* ]]; then
-        local uid_gid=$(get_remote_uid_gid_quiet)
+        local uid_gid
+        uid_gid=$(ssh_execute "echo uid=\$(id -u),gid=\$(id -g)" | tr -d '[:space:]')
         final_options="${final_options},${uid_gid}"
         log_info "Added UID/GID to options: $uid_gid"
     fi
     
-    # Create complete mount command
+    # Create and log the complete mount command - single line with no newlines
     local mount_cmd="mount -t cifs -o ${final_options},credentials=${creds_file} //${server_host}/${share_name} ${mount_point}"
     log_info "Mount command: $mount_cmd"
     

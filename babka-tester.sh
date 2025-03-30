@@ -78,7 +78,7 @@ initialize_environment() {
     if [ ! -d "${LIB_DIR}" ]; then
         log_error "Lib directory not found: ${LIB_DIR}"
         return 1
-    }
+    fi
     
     log_success "Environment initialized successfully"
     update_status "INITIALIZED"

@@ -20,14 +20,21 @@ ssh_execute() {
         return 1
     fi
     
-    log_info "Executing on ${REMOTE_HOST}: $command"
-    ssh "${REMOTE_USER}@${REMOTE_HOST}" "$command"
+    # Redirect logs to stderr so they don't interfere with command output
+    log_info "Executing on ${REMOTE_HOST}: $command" >&2
+    
+    # Execute command and capture output
+    local output
+    output=$(ssh "${REMOTE_USER}@${REMOTE_HOST}" "$command" 2>&1)
     local exit_code=$?
     
+    # Print the output
+    echo "$output"
+    
     if [ $exit_code -eq 0 ]; then
-        log_success "Remote command executed successfully"
+        log_success "Remote command executed successfully" >&2
     else
-        log_error "Remote command failed with exit code $exit_code"
+        log_error "Remote command failed with exit code $exit_code" >&2
     fi
     
     return $exit_code

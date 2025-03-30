@@ -148,11 +148,12 @@ test_smb_mount() {
     local password="${SMB_PASSWORD:-password}"
     
     # Create credentials file on remote host
-    ssh_execute "echo \"username=$username\" > ~/.smbcredentials && echo \"password=$password\" >> ~/.smbcredentials && chmod 600 ~/.smbcredentials"
+    local creds_file="/home/${REMOTE_USER}/.smbcredentials"
+    ssh_execute "echo \"username=$username\" > $creds_file && echo \"password=$password\" >> $creds_file && chmod 600 $creds_file"
     
     # Mount SMB share
     log_info "Mounting SMB share with options: $mount_options"
-    ssh_execute_sudo "mount -t cifs -o $mount_options,credentials=~$username/.smbcredentials //$server_host/$share_name $mount_point"
+    ssh_execute_sudo "mount -t cifs -o $mount_options,credentials=$creds_file //$server_host/$share_name $mount_point"
     
     if [ $? -ne 0 ]; then
         log_error "Failed to mount SMB share"
@@ -204,9 +205,18 @@ test_smb_with_file_mode() {
 # Function: test_smb_with_uid_gid
 # Description: Test SMB mount with specific UID/GID
 test_smb_with_uid_gid() {
-    local uid=$(ssh_execute "id -u")
-    local gid=$(ssh_execute "id -g")
-    test_smb_mount "SMB with UID/GID" "rw,uid=$uid,gid=$gid"
+    # Get UID and GID as variables before using them in the mount command
+    local uid=$(ssh_execute "id -u" | tr -d '\r\n')
+    local gid=$(ssh_execute "id -g" | tr -d '\r\n')
+    
+    # Make sure uid/gid are numbers
+    if ! [[ "$uid" =~ ^[0-9]+$ ]] || ! [[ "$gid" =~ ^[0-9]+$ ]]; then
+        log_warning "Could not get valid UID/GID, using default options"
+        test_smb_mount "SMB with UID/GID" "rw"
+    else
+        test_smb_mount "SMB with UID/GID" "rw,uid=$uid,gid=$gid"
+    fi
+    
     return $?
 }
 

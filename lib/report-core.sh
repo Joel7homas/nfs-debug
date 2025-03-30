@@ -58,64 +58,76 @@ add_test_summary() {
     # Count successful tests by category
     local nfs_success=0
     if [ -f "${RESULT_DIR}/results.log" ]; then
-        nfs_success=$(grep -c "RESULT:NFS:.*:SUCCESS" "${RESULT_DIR}/results.log" || echo "0")
+        nfs_success=$(grep -c "RESULT:NFS:.*:SUCCESS" "${RESULT_DIR}/results.log" || echo 0)
+        nfs_success=$(echo $nfs_success | tr -d '\n')
     fi
     
     local mount_success=0
     if [ -f "${RESULT_DIR}/mount_results.log" ]; then
-        mount_success=$(grep -c "RESULT:MOUNT:.*:SUCCESS" "${RESULT_DIR}/mount_results.log" || echo "0")
+        mount_success=$(grep -c "RESULT:MOUNT:.*:SUCCESS" "${RESULT_DIR}/mount_results.log" || echo 0)
+        mount_success=$(echo $mount_success | tr -d '\n')
     fi
     
     local bindfs_success=0
     if [ -f "${RESULT_DIR}/bindfs_results.log" ]; then
-        bindfs_success=$(grep -c "RESULT:BINDFS:.*:SUCCESS" "${RESULT_DIR}/bindfs_results.log" || echo "0")
+        bindfs_success=$(grep -c "RESULT:BINDFS:.*:SUCCESS" "${RESULT_DIR}/bindfs_results.log" || echo 0)
+        bindfs_success=$(echo $bindfs_success | tr -d '\n')
     fi
     
     local smb_success=0
     if [ -f "${RESULT_DIR}/smb_results.log" ]; then
-        smb_success=$(grep -c "RESULT:SMB:.*:SUCCESS" "${RESULT_DIR}/smb_results.log" || echo "0")
+        smb_success=$(grep -c "RESULT:SMB:.*:SUCCESS" "${RESULT_DIR}/smb_results.log" || echo 0)
+        smb_success=$(echo $smb_success | tr -d '\n')
     fi
     
     # Count partial tests by category
     local nfs_partial=0
     if [ -f "${RESULT_DIR}/results.log" ]; then
-        nfs_partial=$(grep -c "RESULT:NFS:.*:PARTIAL" "${RESULT_DIR}/results.log" || echo "0")
+        nfs_partial=$(grep -c "RESULT:NFS:.*:PARTIAL" "${RESULT_DIR}/results.log" || echo 0)
+        nfs_partial=$(echo $nfs_partial | tr -d '\n')
     fi
     
     local mount_partial=0
     if [ -f "${RESULT_DIR}/mount_results.log" ]; then
-        mount_partial=$(grep -c "RESULT:MOUNT:.*:PARTIAL" "${RESULT_DIR}/mount_results.log" || echo "0")
+        mount_partial=$(grep -c "RESULT:MOUNT:.*:PARTIAL" "${RESULT_DIR}/mount_results.log" || echo 0)
+        mount_partial=$(echo $mount_partial | tr -d '\n')
     fi
     
     local bindfs_partial=0
     if [ -f "${RESULT_DIR}/bindfs_results.log" ]; then
-        bindfs_partial=$(grep -c "RESULT:BINDFS:.*:PARTIAL" "${RESULT_DIR}/bindfs_results.log" || echo "0")
+        bindfs_partial=$(grep -c "RESULT:BINDFS:.*:PARTIAL" "${RESULT_DIR}/bindfs_results.log" || echo 0)
+        bindfs_partial=$(echo $bindfs_partial | tr -d '\n')
     fi
     
     local smb_partial=0
     if [ -f "${RESULT_DIR}/smb_results.log" ]; then
-        smb_partial=$(grep -c "RESULT:SMB:.*:PARTIAL" "${RESULT_DIR}/smb_results.log" || echo "0")
+        smb_partial=$(grep -c "RESULT:SMB:.*:PARTIAL" "${RESULT_DIR}/smb_results.log" || echo 0)
+        smb_partial=$(echo $smb_partial | tr -d '\n')
     fi
     
     # Calculate failed tests
     local nfs_total=0
     if [ -f "${RESULT_DIR}/results.log" ]; then
-        nfs_total=$(grep -c "RESULT:NFS:" "${RESULT_DIR}/results.log" || echo "0")
+        nfs_total=$(grep -c "RESULT:NFS:" "${RESULT_DIR}/results.log" || echo 0)
+        nfs_total=$(echo $nfs_total | tr -d '\n')
     fi
     
     local mount_total=0
     if [ -f "${RESULT_DIR}/mount_results.log" ]; then
-        mount_total=$(grep -c "RESULT:MOUNT:" "${RESULT_DIR}/mount_results.log" || echo "0")
+        mount_total=$(grep -c "RESULT:MOUNT:" "${RESULT_DIR}/mount_results.log" || echo 0)
+        mount_total=$(echo $mount_total | tr -d '\n')
     fi
     
     local bindfs_total=0
     if [ -f "${RESULT_DIR}/bindfs_results.log" ]; then
-        bindfs_total=$(grep -c "RESULT:BINDFS:" "${RESULT_DIR}/bindfs_results.log" || echo "0")
+        bindfs_total=$(grep -c "RESULT:BINDFS:" "${RESULT_DIR}/bindfs_results.log" || echo 0)
+        bindfs_total=$(echo $bindfs_total | tr -d '\n')
     fi
     
     local smb_total=0
     if [ -f "${RESULT_DIR}/smb_results.log" ]; then
-        smb_total=$(grep -c "RESULT:SMB:" "${RESULT_DIR}/smb_results.log" || echo "0")
+        smb_total=$(grep -c "RESULT:SMB:" "${RESULT_DIR}/smb_results.log" || echo 0)
+        smb_total=$(echo $smb_total | tr -d '\n')
     fi
     
     local nfs_failed=$((nfs_total - nfs_success - nfs_partial))

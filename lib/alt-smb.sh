@@ -165,24 +165,13 @@ enable_guest_access() {
     # Get the share ID
     local share_id=$(echo "$share_data" | jq -r '.[0].id')
     
-    # Create update with guest access enabled - use simpler settings
-    local update_data='{
-        "guestok": true,
-        "auxsmbconf": "create mask=0755\ndirectory mask=0755\nguest ok = yes"
-    }'
-    
-    # Update the share
-    midclt call "sharing.smb.update" "$share_id" "$update_data"
+    # Try simplest update with just guestok
+    log_info "Setting guestok=true on SMB share"
+    midclt call "sharing.smb.update" "$share_id" '{"guestok": true}'
     
     if [ $? -ne 0 ]; then
-        log_warning "Failed to update SMB share with custom settings, trying simpler update"
-        # Try with just guestok
-        midclt call "sharing.smb.update" "$share_id" '{"guestok": true}'
-        
-        if [ $? -ne 0 ]; then
-            log_error "Failed to enable guest access on SMB share"
-            return 1
-        fi
+        log_error "Failed to enable guest access on SMB share"
+        return 1
     fi
     
     # Restart SMB service to apply changes
@@ -226,11 +215,14 @@ test_smb_mount() {
     # Prepare mount point
     prepare_smb_mount_point
     
+    # Get server IP address (use IP instead of hostname to avoid DNS issues)
+    local server_ip=$(hostname -I | awk '{print $1}')
+    
     # Try different authentication methods
     
     # 1. First try guest access
     log_info "Attempting mount with guest access"
-    local guest_cmd="mount -t cifs -o ${mount_options},guest //localhost/${share_name} ${mount_point}"
+    local guest_cmd="mount -t cifs -o ${mount_options},guest //${server_ip}/${share_name} ${mount_point}"
     log_info "Guest mount command: $guest_cmd"
     
     ssh_execute_sudo "$guest_cmd"
@@ -268,8 +260,8 @@ test_smb_mount() {
     local password="${SMB_PASSWORD:-password}"
     
     log_info "Trying mount with direct username/password"
-    local direct_cmd="mount -t cifs -o ${mount_options},username=${username},password=${password},vers=3.0 //localhost/${share_name} ${mount_point}"
-    log_info "Direct auth mount command: mount -t cifs -o ${mount_options},username=*****,password=*****,vers=3.0 //localhost/${share_name} ${mount_point}"
+    local direct_cmd="mount -t cifs -o ${mount_options},username=${username},password=${password},vers=3.0 //${server_ip}/${share_name} ${mount_point}"
+    log_info "Direct auth mount command: mount -t cifs -o ${mount_options},username=*****,password=*****,vers=3.0 //${server_ip}/${share_name} ${mount_point}"
     
     ssh_execute_sudo "$direct_cmd"
     local direct_result=$?
@@ -317,7 +309,7 @@ test_smb_mount() {
     log_info "Created credentials file at: $creds_file"
     
     # Create and log the complete mount command - single line with no newlines
-    local mount_cmd="mount -t cifs -o ${mount_options},credentials=${creds_file},vers=3.0 //localhost/${share_name} ${mount_point}"
+    local mount_cmd="mount -t cifs -o ${mount_options},credentials=${creds_file},vers=3.0 //${server_ip}/${share_name} ${mount_point}"
     log_info "Mount command: $mount_cmd"
     
     # Execute the mount command

@@ -140,18 +140,26 @@ configure_nfs_export() {
     # Check if export already exists
     local existing_export=$(get_existing_nfs_export "$export_path")
     
-    if [ -n "$existing_export" ]; then
+    # Check if we got a valid result (not empty)
+    if [ -n "$existing_export" ] && [ "$existing_export" != "[]" ]; then
         # Extract ID from existing export
         local export_id=$(echo "$existing_export" | jq -r '.[0].id')
         
-        # Update existing export
-        update_nfs_export "$export_id" "$config_name" "$config_json"
-        return $?
-    else
-        # Create new export
-        create_nfs_export "$config_name" "$config_json"
-        return $?
+        # Verify we have a valid ID (number) before proceeding
+        if [[ "$export_id" =~ ^[0-9]+$ ]]; then
+            log_info "Found existing export with ID $export_id"
+            # Update existing export
+            update_nfs_export "$export_id" "$config_name" "$config_json"
+            return $?
+        else
+            log_warning "Invalid export ID: $export_id - will create new export"
+        fi
     fi
+    
+    # Create new export
+    log_info "Creating new NFS export"
+    create_nfs_export "$config_name" "$config_json"
+    return $?
 }
 
 # Function: test_nfs_export_config

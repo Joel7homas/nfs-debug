@@ -77,8 +77,7 @@ update_nfs_export() {
     
     # TrueNAS Scale 24.10.2 expects two parameters: id (as integer) and config object
     # Make sure config_json is valid
-    echo "$config_json" | jq . > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
+    if ! jq . <<< "$config_json" > /dev/null 2>&1; then
         log_error "Invalid config JSON: $config_json"
         return 1
     fi
@@ -259,27 +258,24 @@ get_basic_nfs_config() {
         \"networks\": []
     }"
     
-    # Validate that both JSON objects are valid before attempting to merge
-    echo "$base_config" | jq . > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        log_error "Invalid base JSON configuration"
-        echo "{}"
+    # Validate base config
+    if ! jq . <<< "$base_config" > /dev/null 2>&1; then
+        log_error "Invalid base NFS JSON configuration"
         return 1
     fi
     
-    echo "$additional_fields" | jq . > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        log_error "Invalid additional fields JSON: $additional_fields"
-        echo "$base_config"
+    # Validate additional fields
+    if ! jq . <<< "$additional_fields" > /dev/null 2>&1; then
+        log_error "Invalid additional NFS fields: $additional_fields"
         return 1
     fi
     
-    # Perform the merge safely
-    local merged_config=""
-    merged_config=$(echo "$base_config" "$additional_fields" | jq -s '.[0] * .[1]' 2>/dev/null)
+    # Merge configs safely
+    local merged_config
+    merged_config=$(jq -s '.[0] * .[1]' <<< "$base_config" <<< "$additional_fields" 2>/dev/null)
     
     if [ $? -ne 0 ] || [ -z "$merged_config" ]; then
-        log_error "Failed to merge JSON configurations"
+        log_error "Failed to merge NFS JSON configurations"
         echo "$base_config"
         return 1
     fi
@@ -293,17 +289,25 @@ get_basic_nfs_config() {
 test_no_mapping_config() {
     local export_path="${EXPORT_PATH:-/mnt/data-tank/docker}"
     
-    local config_json=$(get_basic_nfs_config "$export_path" '{
+    local additional_fields='{
         "maproot_user": null,
         "maproot_group": null,
         "mapall_user": null,
         "mapall_group": null,
         "security": []
-    }')
+    }'
     
-    # Validate JSON before proceeding
-    echo "$config_json" | jq . > /dev/null 2>&1
+    local config_json
+    config_json=$(get_basic_nfs_config "$export_path" "$additional_fields")
+    
+    # Check if get_basic_nfs_config succeeded
     if [ $? -ne 0 ]; then
+        log_error "Failed to generate NFS config for No mapping test"
+        return 1
+    fi
+    
+    # Validate JSON
+    if ! jq . <<< "$config_json" > /dev/null 2>&1; then
         log_error "Invalid JSON configuration for No mapping test"
         return 1
     fi
@@ -317,17 +321,25 @@ test_no_mapping_config() {
 test_root_mapping_config() {
     local export_path="${EXPORT_PATH:-/mnt/data-tank/docker}"
     
-    local config_json=$(get_basic_nfs_config "$export_path" '{
+    local additional_fields='{
         "maproot_user": "root",
         "maproot_group": "wheel",
         "mapall_user": null,
         "mapall_group": null,
         "security": ["SYS"]
-    }')
+    }'
     
-    # Validate JSON before proceeding
-    echo "$config_json" | jq . > /dev/null 2>&1
+    local config_json
+    config_json=$(get_basic_nfs_config "$export_path" "$additional_fields")
+    
+    # Check if get_basic_nfs_config succeeded
     if [ $? -ne 0 ]; then
+        log_error "Failed to generate NFS config for Root mapping test"
+        return 1
+    fi
+    
+    # Validate JSON
+    if ! jq . <<< "$config_json" > /dev/null 2>&1; then
         log_error "Invalid JSON configuration for Root mapping test"
         return 1
     fi
@@ -341,17 +353,25 @@ test_root_mapping_config() {
 test_all_root_mapping_config() {
     local export_path="${EXPORT_PATH:-/mnt/data-tank/docker}"
     
-    local config_json=$(get_basic_nfs_config "$export_path" '{
+    local additional_fields='{
         "maproot_user": null,
         "maproot_group": null,
         "mapall_user": "root",
         "mapall_group": "wheel",
         "security": ["SYS"]
-    }')
+    }'
     
-    # Validate JSON before proceeding
-    echo "$config_json" | jq . > /dev/null 2>&1
+    local config_json
+    config_json=$(get_basic_nfs_config "$export_path" "$additional_fields")
+    
+    # Check if get_basic_nfs_config succeeded
     if [ $? -ne 0 ]; then
+        log_error "Failed to generate NFS config for All to root test"
+        return 1
+    fi
+    
+    # Validate JSON
+    if ! jq . <<< "$config_json" > /dev/null 2>&1; then
         log_error "Invalid JSON configuration for All to root test"
         return 1
     fi
@@ -375,11 +395,17 @@ test_remote_user_mapping_config() {
         \"security\": [\"SYS\"]
     }"
     
-    local config_json=$(get_basic_nfs_config "$export_path" "$additional_fields")
+    local config_json
+    config_json=$(get_basic_nfs_config "$export_path" "$additional_fields")
     
-    # Validate JSON before proceeding
-    echo "$config_json" | jq . > /dev/null 2>&1
+    # Check if get_basic_nfs_config succeeded
     if [ $? -ne 0 ]; then
+        log_error "Failed to generate NFS config for Map to user test"
+        return 1
+    fi
+    
+    # Validate JSON
+    if ! jq . <<< "$config_json" > /dev/null 2>&1; then
         log_error "Invalid JSON configuration for Map to user test"
         return 1
     fi

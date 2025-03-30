@@ -141,7 +141,7 @@ restore_config() {
     local config=$(jq -r '.[0]' "$backup_file")
     
     # Update the configuration
-    midclt call "${api_endpoint%.query}.update" "[$id, $config]"
+    midclt call "${api_endpoint%.query}.update" "$id" "$config"
     local exit_code=$?
     
     if [ $exit_code -eq 0 ]; then

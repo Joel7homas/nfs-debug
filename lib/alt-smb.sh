@@ -111,56 +111,38 @@ create_smb_share() {
     return 0
 }
 
-# Function: create_smb_credentials_file
-# Description: Create SMB credentials file on remote host
+# Function: create_smb_credentials_quiet
+# Description: Create SMB credentials file on remote host without logs
 # Args: $1 - Username, $2 - Password
 # Returns: Path to credentials file
-create_smb_credentials_file() {
+create_smb_credentials_quiet() {
     local username="$1"
     local password="$2"
     local remote_user="${REMOTE_USER:-joel}"
     
     # Create absolute path for credentials file
-    local creds_file="/home/${remote_user}/.smbcredentials-test"
-    
-    log_info "Creating SMB credentials file on remote host at $creds_file"
+    local creds_file="/home/${remote_user}/.smbcreds-test"
     
     # Create the credentials file with proper permissions
     ssh_execute "echo \"username=${username}\" > \"$creds_file\" && echo \"password=${password}\" >> \"$creds_file\" && chmod 600 \"$creds_file\""
     
     if [ $? -ne 0 ]; then
-        log_error "Failed to create SMB credentials file"
         return 1
     fi
     
-    log_success "SMB credentials file created at $creds_file"
     echo "$creds_file"
     return 0
 }
 
-# Function: get_remote_uid_gid
-# Description: Get UID and GID of remote user
+# Function: get_remote_uid_gid_quiet
+# Description: Get UID and GID of remote user without logs
 # Returns: String in format "uid=X,gid=Y"
-get_remote_uid_gid() {
-    log_info "Getting UID and GID of remote user"
+get_remote_uid_gid_quiet() {
+    # Get UID and GID directly without intermediate variables
+    local uid_gid=$(ssh_execute "echo uid=\$(id -u),gid=\$(id -g)")
     
-    # Get UID and GID as clean numbers
-    local uid=$(ssh_execute "id -u" | tr -d '\r\n')
-    local gid=$(ssh_execute "id -g" | tr -d '\r\n')
-    
-    # Validate that they are numbers
-    if ! [[ "$uid" =~ ^[0-9]+$ ]]; then
-        log_warning "Invalid UID obtained: $uid, using default"
-        uid="1000"
-    fi
-    
-    if ! [[ "$gid" =~ ^[0-9]+$ ]]; then
-        log_warning "Invalid GID obtained: $gid, using default"
-        gid="1000"
-    fi
-    
-    log_info "Remote user UID=$uid, GID=$gid"
-    echo "uid=$uid,gid=$gid"
+    # Return the uid_gid string directly
+    echo "$uid_gid"
     return 0
 }
 
@@ -195,52 +177,42 @@ test_smb_mount() {
     # Prepare mount point
     prepare_smb_mount_point
     
-    # Get credentials for mount
+    # Get credentials for mount (without logging)
     local username="${SMB_USERNAME:-${REMOTE_USER}}"
     local password="${SMB_PASSWORD:-password}"
     
-    # Get UID and GID as a plain string without logging to prevent command interference
-    local uid_gid=""
-    if [[ "$mount_options" == *"UID"* ]] || [[ "$mount_options" == *"GID"* ]]; then
-        # Capture the uid/gid without logging
-        log_info "Getting remote UID/GID silently for mount options"
-        uid_gid=$(ssh_execute "echo uid=\$(id -u),gid=\$(id -g)" 2>/dev/null)
-    fi
-    
-    # Create credentials file on remote host with absolute path
-    # Suppress intermediate logging to prevent command interference
+    # Create credentials file (without logging)
     local creds_file=""
-    {
-        # Redirect all logging to /dev/null
-        exec 3>&1 4>&2 1>/dev/null 2>&1
-        creds_file=$(create_smb_credentials_file "$username" "$password")
-        # Restore original file descriptors
-        exec 1>&3 2>&4 3>&- 4>&-
-    }
+    creds_file=$(create_smb_credentials_quiet "$username" "$password")
     
-    # If we couldn't get a credentials file path, log error and exit
     if [ -z "$creds_file" ]; then
         log_error "Failed to create credentials file"
         echo "RESULT:SMB:$description:CREDENTIALS_FAILED" >> "${RESULT_DIR}/smb_results.log"
         return 1
-    else
-        log_success "Created credentials file at: $creds_file"
     fi
     
-    # Prepare the final mount options by appending UID/GID if needed
+    log_info "Created credentials file at: $creds_file"
+    
+    # Prepare final mount options
     local final_options="$mount_options"
-    if [ -n "$uid_gid" ]; then
+    
+    # Add UID/GID if this is the UID/GID test
+    if [[ "$description" == *"UID/GID"* ]]; then
+        local uid_gid=$(get_remote_uid_gid_quiet)
         final_options="${final_options},${uid_gid}"
+        log_info "Added UID/GID to options: $uid_gid"
     fi
     
-    # Mount SMB share with credentials file
-    log_info "Mounting SMB share with options: $final_options"
+    # Create complete mount command
     local mount_cmd="mount -t cifs -o ${final_options},credentials=${creds_file} //${server_host}/${share_name} ${mount_point}"
+    log_info "Mount command: $mount_cmd"
+    
+    # Execute the mount command
     ssh_execute_sudo "$mount_cmd"
     local mount_result=$?
     
     if [ $mount_result -ne 0 ]; then
-        log_error "Failed to mount SMB share with command: $mount_cmd"
+        log_error "Failed to mount SMB share"
         echo "RESULT:SMB:$description:MOUNT_FAILED" >> "${RESULT_DIR}/smb_results.log"
         
         # Clean up credentials file
@@ -289,12 +261,7 @@ test_smb_with_file_mode() {
 # Function: test_smb_with_uid_gid
 # Description: Test SMB mount with specific UID/GID
 test_smb_with_uid_gid() {
-    # Get UID and GID as a formatted string
-    local uid_gid=$(get_remote_uid_gid)
-    
-    # Test with the obtained UID/GID
-    test_smb_mount "SMB with UID/GID" "rw,${uid_gid}"
-    
+    test_smb_mount "SMB with UID/GID" "rw"
     return $?
 }
 
@@ -378,15 +345,7 @@ test_smb_solutions() {
         local description=$(echo "$success_config" | cut -d: -f3)
         
         # Use the UID/GID solution parameters for the systemd unit
-        # Capture UID/GID without logging to prevent command interference
-        local uid_gid=""
-        {
-            # Redirect all logging to /dev/null
-            exec 3>&1 4>&2 1>/dev/null 2>&1
-            uid_gid=$(ssh_execute "echo uid=\$(id -u),gid=\$(id -g)" 2>/dev/null)
-            # Restore original file descriptors
-            exec 1>&3 2>&4 3>&- 4>&-
-        }
+        local uid_gid=$(get_remote_uid_gid_quiet)
         create_smb_systemd_unit "$description" "rw,${uid_gid},file_mode=0755,dir_mode=0755"
     fi
     

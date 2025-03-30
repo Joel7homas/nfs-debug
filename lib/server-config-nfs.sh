@@ -185,6 +185,42 @@ configure_nfs_export() {
     fi
 }
 
+# Function: verify_nfs_export_config
+# Description: Run exportfs -v and extract the configuration for a specific path
+# Args: $1 - Export path
+# Returns: 0 on success, 1 on failure
+verify_nfs_export_config() {
+    local export_path="$1"
+    local escaped_path=$(echo "$export_path" | sed 's/\//\\\//g')
+    
+    log_info "Verifying actual NFS export configuration for path: $export_path"
+    
+    # Run exportfs -v and extract the specific export configuration
+    local export_config=$(sudo exportfs -v | grep -A 1 "^$escaped_path" | grep -v "^$escaped_path" | tr -d '\t')
+    
+    if [ -z "$export_config" ]; then
+        log_error "No export configuration found for path: $export_path"
+        return 1
+    fi
+    
+    # Extract and log key options
+    local root_squash=$(echo "$export_config" | grep -o 'root_squash\|no_root_squash')
+    local all_squash=$(echo "$export_config" | grep -o 'all_squash\|no_all_squash')
+    local anonuid=$(echo "$export_config" | grep -o 'anonuid=[0-9]*' | cut -d= -f2)
+    local anongid=$(echo "$export_config" | grep -o 'anongid=[0-9]*' | cut -d= -f2)
+    
+    log_info "  Export options: $export_config"
+    log_info "  Root squash: ${root_squash:-not specified}"
+    log_info "  All squash: ${all_squash:-not specified}"
+    log_info "  Anonymous UID: ${anonuid:-not specified}"
+    log_info "  Anonymous GID: ${anongid:-not specified}"
+    
+    # Add to results file
+    echo "EXPORT_CONFIG:$export_path:$export_config" >> "${RESULT_DIR}/export_configs.log"
+    
+    return 0
+}
+
 # Function: test_nfs_export_config
 # Description: Test a specific NFS export configuration
 # Args: $1 - Config name, $2 - Config JSON
@@ -211,6 +247,8 @@ test_nfs_export_config() {
     # Extract path from config
     local export_path=$(echo "$config_json" | jq -r '.path')
     
+    verify_nfs_export_config "$export_path"
+
     # Try to mount
     local server_host=$(hostname -f)
     ssh_execute_sudo "mount -t nfs $server_host:$export_path ${REMOTE_MOUNT_POINT}"

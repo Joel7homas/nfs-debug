@@ -18,18 +18,15 @@ get_existing_nfs_export() {
     
     log_info "Checking for existing NFS export for path: $export_path"
     
-    # Using path (not paths) based on the API documentation and test results
-    local result=$(midclt call "sharing.nfs.query" "[[\"path\", \"=\", \"$export_path\"]]")
+    # Get all exports first
+    local all_exports=$(midclt call "sharing.nfs.query")
     
-    # Check if we got any results (not empty array)
-    if [ "$result" == "[]" ]; then
-        echo ""
-        return 1
-    else
-        echo "$result"
-        return 0
-    fi
+    # Loop through exports to find matching path
+    echo "$all_exports" | jq --arg path "$export_path" '.[] | select(.path==$path)'
+    
+    return 0
 }
+
 
 # Function: create_nfs_export
 # Description: Create a new NFS export with specific settings
@@ -137,29 +134,55 @@ configure_nfs_export() {
     # Extract path from the config JSON
     local export_path=$(echo "$config_json" | jq -r '.path')
     
-    # Check if export already exists
-    local existing_export=$(get_existing_nfs_export "$export_path")
+    # Get all exports
+    local all_exports=$(midclt call "sharing.nfs.query")
     
-    # Check if we got a valid result (not empty)
-    if [ -n "$existing_export" ] && [ "$existing_export" != "[]" ]; then
+    # Find export with matching path
+    local existing_export=$(echo "$all_exports" | jq --arg path "$export_path" '.[] | select(.path==$path)')
+    
+    if [ -n "$existing_export" ]; then
         # Extract ID from existing export
-        local export_id=$(echo "$existing_export" | jq -r '.[0].id')
+        local export_id=$(echo "$existing_export" | jq -r '.id')
         
-        # Verify we have a valid ID (number) before proceeding
         if [[ "$export_id" =~ ^[0-9]+$ ]]; then
             log_info "Found existing export with ID $export_id"
-            # Update existing export
-            update_nfs_export "$export_id" "$config_name" "$config_json"
-            return $?
+            
+            # Update with the new config - use jq to merge configs selectively
+            local update_config=$(echo "$config_json" | jq '{
+                "maproot_user": .maproot_user,
+                "maproot_group": .maproot_group,
+                "mapall_user": .mapall_user,
+                "mapall_group": .mapall_group,
+                "security": .security
+            }')
+            
+            log_info "Updating export with config: $update_config"
+            midclt call "sharing.nfs.update" "$export_id" "$update_config"
+            
+            if [ $? -ne 0 ]; then
+                log_error "Failed to update NFS export: $config_name"
+                return 1
+            fi
+            
+            log_success "Updated NFS export: $config_name"
+            
+            # Restart NFS service to apply changes
+            restart_nfs_service
+            
+            # Track the configuration change
+            echo "CONFIG:NFS:$config_name:$(date +%s)" >> "${RESULT_DIR}/config_changes.log"
+            
+            return 0
         else
-            log_warning "Invalid export ID: $export_id - will create new export"
+            log_warning "Invalid export ID: $export_id - cannot update"
+            return 1
         fi
+    else
+        log_warning "No existing export found for path: $export_path"
+        log_warning "Creating a new export is not possible during testing because it would conflict with existing exports"
+        log_warning "Please ensure the export already exists before running tests"
+        return 1
     fi
-    
-    # Create new export
-    log_info "Creating new NFS export"
-    create_nfs_export "$config_name" "$config_json"
-    return $?
 }
 
 # Function: test_nfs_export_config

@@ -199,21 +199,48 @@ test_smb_mount() {
     local username="${SMB_USERNAME:-${REMOTE_USER}}"
     local password="${SMB_PASSWORD:-password}"
     
+    # Get UID and GID as a plain string without logging to prevent command interference
+    local uid_gid=""
+    if [[ "$mount_options" == *"UID"* ]] || [[ "$mount_options" == *"GID"* ]]; then
+        # Capture the uid/gid without logging
+        log_info "Getting remote UID/GID silently for mount options"
+        uid_gid=$(ssh_execute "echo uid=\$(id -u),gid=\$(id -g)" 2>/dev/null)
+    fi
+    
     # Create credentials file on remote host with absolute path
-    local creds_file=$(create_smb_credentials_file "$username" "$password")
-    if [ $? -ne 0 ]; then
-        log_error "Skipping SMB test: Failed to create credentials file"
+    # Suppress intermediate logging to prevent command interference
+    local creds_file=""
+    {
+        # Redirect all logging to /dev/null
+        exec 3>&1 4>&2 1>/dev/null 2>&1
+        creds_file=$(create_smb_credentials_file "$username" "$password")
+        # Restore original file descriptors
+        exec 1>&3 2>&4 3>&- 4>&-
+    }
+    
+    # If we couldn't get a credentials file path, log error and exit
+    if [ -z "$creds_file" ]; then
+        log_error "Failed to create credentials file"
         echo "RESULT:SMB:$description:CREDENTIALS_FAILED" >> "${RESULT_DIR}/smb_results.log"
         return 1
+    else
+        log_success "Created credentials file at: $creds_file"
+    fi
+    
+    # Prepare the final mount options by appending UID/GID if needed
+    local final_options="$mount_options"
+    if [ -n "$uid_gid" ]; then
+        final_options="${final_options},${uid_gid}"
     fi
     
     # Mount SMB share with credentials file
-    log_info "Mounting SMB share with options: $mount_options"
-    ssh_execute_sudo "mount -t cifs -o ${mount_options},credentials=\"${creds_file}\" //${server_host}/${share_name} ${mount_point}"
+    log_info "Mounting SMB share with options: $final_options"
+    local mount_cmd="mount -t cifs -o ${final_options},credentials=${creds_file} //${server_host}/${share_name} ${mount_point}"
+    ssh_execute_sudo "$mount_cmd"
     local mount_result=$?
     
     if [ $mount_result -ne 0 ]; then
-        log_error "Failed to mount SMB share"
+        log_error "Failed to mount SMB share with command: $mount_cmd"
         echo "RESULT:SMB:$description:MOUNT_FAILED" >> "${RESULT_DIR}/smb_results.log"
         
         # Clean up credentials file
@@ -351,29 +378,49 @@ test_smb_solutions() {
         local description=$(echo "$success_config" | cut -d: -f3)
         
         # Use the UID/GID solution parameters for the systemd unit
-        local uid_gid=$(get_remote_uid_gid)
+        # Capture UID/GID without logging to prevent command interference
+        local uid_gid=""
+        {
+            # Redirect all logging to /dev/null
+            exec 3>&1 4>&2 1>/dev/null 2>&1
+            uid_gid=$(ssh_execute "echo uid=\$(id -u),gid=\$(id -g)" 2>/dev/null)
+            # Restore original file descriptors
+            exec 1>&3 2>&4 3>&- 4>&-
+        }
         create_smb_systemd_unit "$description" "rw,${uid_gid},file_mode=0755,dir_mode=0755"
     fi
     
     log_success "All SMB solutions tested"
     
-    # Generate summary
+    # Generate summary with proper error handling
     local success_count=0
     local partial_count=0
     local failed_count=0
     
-    # Safely count results
+    # Safely count results with proper error handling
     if [ -f "${RESULT_DIR}/smb_results.log" ]; then
+        # Clean whitespace and handle multiline output
         success_count=$(grep -c "RESULT:SMB:.*:SUCCESS" "${RESULT_DIR}/smb_results.log" 2>/dev/null || echo 0)
         partial_count=$(grep -c "RESULT:SMB:.*:PARTIAL" "${RESULT_DIR}/smb_results.log" 2>/dev/null || echo 0)
         failed_count=$(grep -c "RESULT:SMB:.*:NO_CONTENT\|RESULT:SMB:.*:MOUNT_FAILED" "${RESULT_DIR}/smb_results.log" 2>/dev/null || echo 0)
+        
+        # Ensure we have clean integers
+        success_count=${success_count//[^0-9]/}
+        partial_count=${partial_count//[^0-9]/}
+        failed_count=${failed_count//[^0-9]/}
+        
+        # Default to 0 if empty
+        success_count=${success_count:-0}
+        partial_count=${partial_count:-0}
+        failed_count=${failed_count:-0}
     fi
     
     log_info "Summary: $success_count successful, $partial_count partial, $failed_count failed SMB solutions"
     
-    if [ $success_count -gt 0 ]; then
+    # Ensure we're using numeric comparisons
+    if [ "$success_count" -gt 0 ]; then
         return 0
-    elif [ $partial_count -gt 0 ]; then
+    elif [ "$partial_count" -gt 0 ]; then
         return 2
     else
         return 1

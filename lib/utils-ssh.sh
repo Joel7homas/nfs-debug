@@ -127,10 +127,21 @@ ssh_create_dir() {
     fi
     
     log_info "Creating directory on ${REMOTE_HOST}: $remote_dir"
-    ssh "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p \"$remote_dir\""
+    
+    # First check if the directory already exists
+    ssh_execute "[ -d \"$remote_dir\" ]"
+    if [ $? -eq 0 ]; then
+        log_success "Directory already exists: $remote_dir"
+        return 0
+    fi
+    
+    # Try to create with sudo to handle permission issues
+    ssh_execute_sudo "mkdir -p \"$remote_dir\""
     local exit_code=$?
     
     if [ $exit_code -eq 0 ]; then
+        # Also ensure the remote user has write permissions to this directory
+        ssh_execute_sudo "chown ${REMOTE_USER}:${REMOTE_USER} \"$remote_dir\""
         log_success "Directory created: $remote_dir"
     else
         log_error "Failed to create directory: $remote_dir"

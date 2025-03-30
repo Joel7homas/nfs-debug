@@ -146,6 +146,52 @@ get_remote_uid_gid_quiet() {
     return 0
 }
 
+# Function: enable_guest_access
+# Description: Enable guest access on SMB share
+enable_guest_access() {
+    local export_path="${EXPORT_PATH:-/mnt/data-tank/docker}"
+    local share_name="${SMB_SHARE_NAME:-docker}"
+    
+    log_info "Enabling guest access on SMB share"
+    
+    # Check if share exists
+    local share_data=$(midclt call "sharing.smb.query" "[[\"path\", \"=\", \"$export_path\"]]")
+    
+    if [ "$share_data" == "[]" ]; then
+        log_error "SMB share not found for $export_path"
+        return 1
+    fi
+    
+    # Get the share ID
+    local share_id=$(echo "$share_data" | jq -r '.[0].id')
+    
+    # Create update with guest access enabled - use simpler settings
+    local update_data='{
+        "guestok": true,
+        "auxsmbconf": "create mask=0755\ndirectory mask=0755\nguest ok = yes"
+    }'
+    
+    # Update the share
+    midclt call "sharing.smb.update" "$share_id" "$update_data"
+    
+    if [ $? -ne 0 ]; then
+        log_warning "Failed to update SMB share with custom settings, trying simpler update"
+        # Try with just guestok
+        midclt call "sharing.smb.update" "$share_id" '{"guestok": true}'
+        
+        if [ $? -ne 0 ]; then
+            log_error "Failed to enable guest access on SMB share"
+            return 1
+        fi
+    fi
+    
+    # Restart SMB service to apply changes
+    midclt call "service.restart" "cifs"
+    
+    log_success "Guest access enabled on SMB share"
+    return 0
+}
+
 # Function: test_smb_mount
 # Description: Test SMB mount with specific options
 # Args: $1 - Description, $2 - Mount options
@@ -174,18 +220,88 @@ test_smb_mount() {
         return 1
     fi
     
-    # Enable guest access for testing
+    # Try to enable guest access
     enable_guest_access
     
     # Prepare mount point
     prepare_smb_mount_point
     
-    # Get credentials for mount (without logging)
+    # Try different authentication methods
+    
+    # 1. First try guest access
+    log_info "Attempting mount with guest access"
+    local guest_cmd="mount -t cifs -o ${mount_options},guest //localhost/${share_name} ${mount_point}"
+    log_info "Guest mount command: $guest_cmd"
+    
+    ssh_execute_sudo "$guest_cmd"
+    local guest_result=$?
+    
+    if [ $guest_result -eq 0 ]; then
+        log_success "Guest mount successful"
+        
+        # Check content visibility
+        ssh_get_content_visibility "$mount_point" "${TEST_DIRS[@]}"
+        local content_result=$?
+        
+        # Unmount
+        ssh_unmount "$mount_point"
+        
+        # Record result
+        if [ $content_result -eq 0 ]; then
+            log_success "SMB guest mount successful: $description"
+            echo "RESULT:SMB:$description:SUCCESS" >> "${RESULT_DIR}/smb_results.log"
+        elif [ $content_result -eq 2 ]; then
+            log_warning "SMB guest mount partially successful: $description"
+            echo "RESULT:SMB:$description:PARTIAL" >> "${RESULT_DIR}/smb_results.log"
+        else
+            log_error "SMB guest mount failed: $description"
+            echo "RESULT:SMB:$description:NO_CONTENT" >> "${RESULT_DIR}/smb_results.log"
+        fi
+        
+        return $content_result
+    else
+        log_warning "Guest mount failed, will try with credentials"
+    fi
+    
+    # 2. Try with direct username/password
     local username="${SMB_USERNAME:-${REMOTE_USER}}"
     local password="${SMB_PASSWORD:-password}"
     
-    # Create credentials file and get path
-    # The echo from ssh_execute returns just the path
+    log_info "Trying mount with direct username/password"
+    local direct_cmd="mount -t cifs -o ${mount_options},username=${username},password=${password},vers=3.0 //localhost/${share_name} ${mount_point}"
+    log_info "Direct auth mount command: mount -t cifs -o ${mount_options},username=*****,password=*****,vers=3.0 //localhost/${share_name} ${mount_point}"
+    
+    ssh_execute_sudo "$direct_cmd"
+    local direct_result=$?
+    
+    if [ $direct_result -eq 0 ]; then
+        log_success "Direct authentication mount successful"
+        
+        # Check content visibility
+        ssh_get_content_visibility "$mount_point" "${TEST_DIRS[@]}"
+        local content_result=$?
+        
+        # Unmount
+        ssh_unmount "$mount_point"
+        
+        # Record result
+        if [ $content_result -eq 0 ]; then
+            log_success "SMB direct auth mount successful: $description"
+            echo "RESULT:SMB:$description:SUCCESS" >> "${RESULT_DIR}/smb_results.log"
+        elif [ $content_result -eq 2 ]; then
+            log_warning "SMB direct auth mount partially successful: $description"
+            echo "RESULT:SMB:$description:PARTIAL" >> "${RESULT_DIR}/smb_results.log"
+        else
+            log_error "SMB direct auth mount failed: $description"
+            echo "RESULT:SMB:$description:NO_CONTENT" >> "${RESULT_DIR}/smb_results.log"
+        fi
+        
+        return $content_result
+    else 
+        log_warning "Direct authentication mount failed, will try with credentials file"
+    fi
+    
+    # 3. Try with credentials file
     local creds_file
     creds_file=$(create_smb_credentials_quiet "$username" "$password")
     
@@ -200,154 +316,52 @@ test_smb_mount() {
     
     log_info "Created credentials file at: $creds_file"
     
-    # Prepare final mount options
-    local final_options="$mount_options"
-    
-    # Add UID/GID if this is the UID/GID test
-    if [[ "$description" == *"UID/GID"* ]]; then
-        local uid_gid
-        uid_gid=$(ssh_execute "echo uid=\$(id -u),gid=\$(id -g)" | tr -d '[:space:]')
-        final_options="${final_options},${uid_gid}"
-        log_info "Added UID/GID to options: $uid_gid"
-    fi
-    
-    # Try with guest access if this is the first mount attempt
-    if [[ "$description" == "Basic SMB" ]]; then
-        log_info "Attempting mount with guest access"
-        # First try with guest
-        local guest_cmd="mount -t cifs -o ${final_options},guest //babka.7homas.com/${share_name} ${mount_point}"
-        log_info "Guest mount command: $guest_cmd"
-        
-        ssh_execute_sudo "$guest_cmd"
-        local guest_result=$?
-        
-        if [ $guest_result -eq 0 ]; then
-            log_success "Guest mount successful"
-            
-            # Check content visibility
-            ssh_get_content_visibility "$mount_point" "${TEST_DIRS[@]}"
-            local content_result=$?
-            
-            # Unmount
-            ssh_unmount "$mount_point"
-            
-            # Record result
-            if [ $content_result -eq 0 ]; then
-                log_success "SMB guest mount successful: $description"
-                echo "RESULT:SMB:$description:SUCCESS" >> "${RESULT_DIR}/smb_results.log"
-            elif [ $content_result -eq 2 ]; then
-                log_warning "SMB guest mount partially successful: $description"
-                echo "RESULT:SMB:$description:PARTIAL" >> "${RESULT_DIR}/smb_results.log"
-            else
-                log_error "SMB guest mount failed: $description"
-                echo "RESULT:SMB:$description:NO_CONTENT" >> "${RESULT_DIR}/smb_results.log"
-            fi
-            
-            # Clean up credentials file
-            ssh_execute "rm -f \"${creds_file}\""
-            
-            return $content_result
-        else
-            log_warning "Guest mount failed, will try with credentials"
-        fi
-    fi
-    
     # Create and log the complete mount command - single line with no newlines
-    local mount_cmd="mount -t cifs -o ${final_options},credentials=${creds_file} //babka.7homas.com/${share_name} ${mount_point}"
+    local mount_cmd="mount -t cifs -o ${mount_options},credentials=${creds_file},vers=3.0 //localhost/${share_name} ${mount_point}"
     log_info "Mount command: $mount_cmd"
     
     # Execute the mount command
     ssh_execute_sudo "$mount_cmd"
     local mount_result=$?
     
-    if [ $mount_result -ne 0 ]; then
-        log_error "Failed to mount SMB share with credentials"
+    if [ $mount_result -eq 0 ]; then
+        log_success "Credentials file mount successful"
         
-        # Try another method: mount with username/password directly in options
-        log_info "Trying mount with direct username/password"
-        local direct_cmd="mount -t cifs -o ${final_options},username=${username},password=${password} //babka.7homas.com/${share_name} ${mount_point}"
-        log_info "Direct auth mount command: mount -t cifs -o ${final_options},username=*****,password=***** //babka.7homas.com/${share_name} ${mount_point}"
+        # Check content visibility
+        ssh_get_content_visibility "$mount_point" "${TEST_DIRS[@]}"
+        local content_result=$?
         
-        ssh_execute_sudo "$direct_cmd"
-        local direct_result=$?
+        # Unmount
+        ssh_unmount "$mount_point"
         
-        if [ $direct_result -ne 0 ]; then
-            log_error "Failed to mount SMB share with direct authentication"
-            echo "RESULT:SMB:$description:MOUNT_FAILED" >> "${RESULT_DIR}/smb_results.log"
-            
-            # Clean up credentials file
-            ssh_execute "rm -f \"${creds_file}\""
-            
-            return 1
+        # Clean up credentials file
+        ssh_execute "rm -f \"${creds_file}\""
+        
+        # Record result
+        if [ $content_result -eq 0 ]; then
+            log_success "SMB credentials mount successful: $description"
+            echo "RESULT:SMB:$description:SUCCESS" >> "${RESULT_DIR}/smb_results.log"
+        elif [ $content_result -eq 2 ]; then
+            log_warning "SMB credentials mount partially successful: $description"
+            echo "RESULT:SMB:$description:PARTIAL" >> "${RESULT_DIR}/smb_results.log"
+        else
+            log_error "SMB credentials mount failed: $description"
+            echo "RESULT:SMB:$description:NO_CONTENT" >> "${RESULT_DIR}/smb_results.log"
         fi
         
-        log_success "Direct authentication mount successful"
+        return $content_result
     fi
     
-    # Check content visibility
-    ssh_get_content_visibility "$mount_point" "${TEST_DIRS[@]}"
-    local content_result=$?
+    # All methods failed
+    log_error "All SMB mount attempts failed"
+    echo "RESULT:SMB:$description:MOUNT_FAILED" >> "${RESULT_DIR}/smb_results.log"
     
-    # Record result
-    if [ $content_result -eq 0 ]; then
-        log_success "SMB mount successful: $description"
-        echo "RESULT:SMB:$description:SUCCESS" >> "${RESULT_DIR}/smb_results.log"
-    elif [ $content_result -eq 2 ]; then
-        log_warning "SMB mount partially successful: $description"
-        echo "RESULT:SMB:$description:PARTIAL" >> "${RESULT_DIR}/smb_results.log"
-    else
-        log_error "SMB mount failed: $description"
-        echo "RESULT:SMB:$description:NO_CONTENT" >> "${RESULT_DIR}/smb_results.log"
+    # Clean up credentials file
+    if [ -n "$creds_file" ]; then
+        ssh_execute "rm -f \"${creds_file}\""
     fi
     
-    # Clean up
-    ssh_unmount "$mount_point"
-    ssh_execute "rm -f \"${creds_file}\""
-    
-    return $content_result
-}
-
-# Function: enable_guest_access
-# Description: Enable guest access on SMB share
-enable_guest_access() {
-    local export_path="${EXPORT_PATH:-/mnt/data-tank/docker}"
-    local share_name="${SMB_SHARE_NAME:-docker}"
-    
-    log_info "Enabling guest access on SMB share"
-    
-    # Check if share exists
-    local share_data=$(midclt call "sharing.smb.query" "[[\"path\", \"=\", \"$export_path\"]]")
-    
-    if [ "$share_data" == "[]" ]; then
-        log_error "SMB share not found for $export_path"
-        return 1
-    fi
-    
-    # Get the share ID
-    local share_id=$(echo "$share_data" | jq -r '.[0].id')
-    
-    # Create update with guest access enabled
-    local update_data=$(cat <<EOF
-{
-  "guestok": true,
-  "auxsmbconf": "create mask=0755\ndirectory mask=0755\nguest ok = yes\nmap to guest = Bad User"
-}
-EOF
-)
-    
-    # Update the share
-    midclt call "sharing.smb.update" "$share_id" "$update_data"
-    
-    if [ $? -ne 0 ]; then
-        log_error "Failed to enable guest access on SMB share"
-        return 1
-    fi
-    
-    # Restart SMB service to apply changes
-    midclt call "service.restart" "cifs"
-    
-    log_success "Guest access enabled on SMB share"
-    return 0
+    return 1
 }
 
 # Function: test_smb_basic

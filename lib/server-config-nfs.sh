@@ -67,9 +67,23 @@ update_nfs_export() {
     local config_name="$2"
     local config_json="$3"
     
+    # Validate that export_id is a number
+    if ! [[ "$export_id" =~ ^[0-9]+$ ]]; then
+        log_error "Invalid export ID: $export_id"
+        return 1
+    fi
+    
     log_info "Updating NFS export (ID: $export_id): $config_name"
     
-    # TrueNAS Scale 24.10.2 expects two parameters: id and config object
+    # TrueNAS Scale 24.10.2 expects two parameters: id (as integer) and config object
+    # Make sure config_json is valid
+    echo "$config_json" | jq . > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        log_error "Invalid config JSON: $config_json"
+        return 1
+    fi
+    
+    # Execute the update command with proper ID handling
     midclt call "sharing.nfs.update" "$export_id" "$config_json"
     
     if [ $? -ne 0 ]; then
@@ -236,19 +250,42 @@ get_basic_nfs_config() {
     local additional_fields="${2:-{}}"
     
     # Create base config with current TrueNAS API format based on sample output
-    local base_config='{
-        "path": "'"$export_path"'",
-        "comment": "Temporary test export",
-        "hosts": ["192.168.4.99"],
-        "ro": false,
-        "enabled": true,
-        "networks": []
-    }'
+    local base_config="{
+        \"path\": \"$export_path\",
+        \"comment\": \"Temporary test export\",
+        \"hosts\": [\"192.168.4.99\"],
+        \"ro\": false,
+        \"enabled\": true,
+        \"networks\": []
+    }"
     
-    # Merge additional fields
-    local merged_config=$(echo "$base_config" "$additional_fields" | jq -s '.[0] * .[1]')
+    # Validate that both JSON objects are valid before attempting to merge
+    echo "$base_config" | jq . > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        log_error "Invalid base JSON configuration"
+        echo "{}"
+        return 1
+    fi
+    
+    echo "$additional_fields" | jq . > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        log_error "Invalid additional fields JSON: $additional_fields"
+        echo "$base_config"
+        return 1
+    fi
+    
+    # Perform the merge safely
+    local merged_config=""
+    merged_config=$(echo "$base_config" "$additional_fields" | jq -s '.[0] * .[1]' 2>/dev/null)
+    
+    if [ $? -ne 0 ] || [ -z "$merged_config" ]; then
+        log_error "Failed to merge JSON configurations"
+        echo "$base_config"
+        return 1
+    fi
     
     echo "$merged_config"
+    return 0
 }
 
 # Function: test_no_mapping_config
@@ -263,6 +300,13 @@ test_no_mapping_config() {
         "mapall_group": null,
         "security": []
     }')
+    
+    # Validate JSON before proceeding
+    echo "$config_json" | jq . > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        log_error "Invalid JSON configuration for No mapping test"
+        return 1
+    fi
     
     test_nfs_export_config "No mapping" "$config_json"
     return $?
@@ -281,6 +325,13 @@ test_root_mapping_config() {
         "security": ["SYS"]
     }')
     
+    # Validate JSON before proceeding
+    echo "$config_json" | jq . > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        log_error "Invalid JSON configuration for Root mapping test"
+        return 1
+    fi
+    
     test_nfs_export_config "Root mapping" "$config_json"
     return $?
 }
@@ -298,6 +349,13 @@ test_all_root_mapping_config() {
         "security": ["SYS"]
     }')
     
+    # Validate JSON before proceeding
+    echo "$config_json" | jq . > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        log_error "Invalid JSON configuration for All to root test"
+        return 1
+    fi
+    
     test_nfs_export_config "All to root" "$config_json"
     return $?
 }
@@ -308,13 +366,23 @@ test_remote_user_mapping_config() {
     local export_path="${EXPORT_PATH:-/mnt/data-tank/docker}"
     local remote_user="${REMOTE_USER:-joel}"
     
-    local config_json=$(get_basic_nfs_config "$export_path" '{
-        "maproot_user": null,
-        "maproot_group": null,
-        "mapall_user": "'"$remote_user"'",
-        "mapall_group": "'"$remote_user"'",
-        "security": ["SYS"]
-    }')
+    # Create the JSON with proper escaping
+    local additional_fields="{
+        \"maproot_user\": null,
+        \"maproot_group\": null,
+        \"mapall_user\": \"$remote_user\",
+        \"mapall_group\": \"$remote_user\",
+        \"security\": [\"SYS\"]
+    }"
+    
+    local config_json=$(get_basic_nfs_config "$export_path" "$additional_fields")
+    
+    # Validate JSON before proceeding
+    echo "$config_json" | jq . > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        log_error "Invalid JSON configuration for Map to user test"
+        return 1
+    fi
     
     test_nfs_export_config "Map to ${REMOTE_USER}" "$config_json"
     return $?
